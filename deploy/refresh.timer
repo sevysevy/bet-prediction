@@ -1,0 +1,10 @@
+[Unit]
+Description=Regeneration toutes les 3 heures
+
+[Timer]
+OnCalendar=*-*-* 00/3:17:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.timers

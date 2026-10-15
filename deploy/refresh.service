@@ -1,0 +1,10 @@
+[Unit]
+Description=Regenere la page Les plus probables
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=hermes
+WorkingDirectory=/srv/bet-prediction
+EnvironmentFile=/srv/bet-prediction/.env
+ExecStart=/usr/bin/python3 src/build_site.py --out /srv/bet-prediction/_site/index.html

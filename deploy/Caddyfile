@@ -1,0 +1,11 @@
+# Service statique de la page generee (option VPS)
+:8080 {
+	root * /srv/bet-prediction/_site
+	encode zstd gzip
+	file_server
+	header {
+		Cache-Control "public, max-age=300"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
+}
