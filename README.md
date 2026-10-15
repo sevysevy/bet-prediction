@@ -113,6 +113,20 @@ Prérequis : `git`, `python3 >= 3.11`, `caddy`. Aucun paquet Python à installer
 Le dépôt étant privé, le VPS a besoin d'un moyen d'authentification pour `git pull` : clé de
 déploiement en lecture (Settings → Deploy keys) ou jeton dans `~/.git-credentials`.
 
+### Sans root (systemd/caddy indisponibles)
+
+Sur un VPS sans accès root, en conteneur, ou sans systemd, le service est autonome :
+
+```bash
+./deploy/start.sh 8080     # demarre, regenere toutes les 3 h, sert la page
+./deploy/stop.sh
+```
+
+`src/serve.py` n'utilise que la bibliothèque standard : il génère la page, la sert, et la rafraîchit
+en tâche de fond. Aucun paquet à installer, aucun privilège requis. Le port par défaut est 8080 — pour
+exposer le site publiquement, ouvrir ce port dans le pare-feu du fournisseur ou placer un reverse
+proxy devant.
+
 ### GitHub Pages (si tu passes en GitHub Pro)
 
 Le workflow Pages a été retiré pour ne pas laisser un job en échec. Si tu passes en Pro, il suffit de
@@ -125,9 +139,10 @@ continue de valider le code à chaque push.
 ```
 src/feeds.py         adaptateurs multi-sources, dévigorisation, sonde, budget de quota
 src/build_site.py    générateur de la page
+src/serve.py         service autonome : génère, sert et rafraîchit (sans root)
 site/index.html      sortie générée (ignorée par git, servie localement)
 docs/                décomposition, architecture, spécification du MVP, registre de preuve
-deploy/              Caddyfile + systemd (option VPS)
+deploy/              install-vps.sh (root/systemd), start.sh + stop.sh (sans root), Caddyfile
 ```
 
 `.github/workflows/ci.yml` valide le code à chaque push (compilation, tests hors ligne, build de
