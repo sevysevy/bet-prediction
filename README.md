@@ -92,23 +92,33 @@ python3 -m http.server -d site 8000                      # http://localhost:8000
 
 ## Déploiement
 
-### GitHub Pages (par défaut)
+Dépôt **privé** — et GitHub Pages exige un compte **GitHub Pro** sur un dépôt privé. Le déploiement
+de référence est donc le **VPS**.
 
-`.github/workflows/deploy.yml` régénère la page **toutes les 3 heures** et la publie sur Pages.
+### VPS (recommandé)
 
-1. **Settings → Secrets and variables → Actions** : ajouter `ODDSPAPI_KEY` (ou `THEODDSAPI_KEY`).
-2. **Settings → Pages → Source** : `GitHub Actions`.
-3. Lancer le workflow une fois à la main (**Actions → build-and-deploy → Run workflow**).
+```bash
+sudo REPO=https://github.com/sevysevy/bet-prediction.git bash deploy/install-vps.sh
+```
 
-Sans clé configurée, le build publie une page de démonstration avec un bandeau visible — le site ne
-casse jamais.
+Le script clone le dépôt dans `/srv/bet-prediction`, installe la paire `systemd`
+(`bet-prediction-refresh.service` + `.timer`, régénération toutes les 3 h), pose le `Caddyfile` et
+démarre le service statique sur le port 8080.
 
-### VPS (option)
+Au premier lancement il crée `/srv/bet-prediction/.env` en `chmod 600` puis s'arrête : **renseigne les
+clés, relance**. Les clés ne quittent jamais le VPS.
 
-`deploy/` contient un `Caddyfile` et une paire `systemd` (service + timer) pour régénérer la page
-localement toutes les 3 heures et la servir en statique.
+Prérequis : `git`, `python3 >= 3.11`, `caddy`. Aucun paquet Python à installer.
 
----
+Le dépôt étant privé, le VPS a besoin d'un moyen d'authentification pour `git pull` : clé de
+déploiement en lecture (Settings → Deploy keys) ou jeton dans `~/.git-credentials`.
+
+### GitHub Pages (si tu passes en GitHub Pro)
+
+Le workflow Pages a été retiré pour ne pas laisser un job en échec. Si tu passes en Pro, il suffit de
+rajouter un job `deploy` qui publie `_site/` avec `actions/upload-pages-artifact` +
+`actions/deploy-pages`, et de mettre Pages en source « GitHub Actions ». `.github/workflows/ci.yml`
+continue de valider le code à chaque push.
 
 ## Structure
 
@@ -119,6 +129,9 @@ site/index.html      sortie générée (ignorée par git, servie localement)
 docs/                décomposition, architecture, spécification du MVP, registre de preuve
 deploy/              Caddyfile + systemd (option VPS)
 ```
+
+`.github/workflows/ci.yml` valide le code à chaque push (compilation, tests hors ligne, build de
+démonstration).
 
 `docs/` contient le travail de conception : `docs/01-architecture.md` (architecture cible complète),
 `docs/02-mvp.md` (spécification de cette page), et `docs/research/evidence-register.md` (les sources
@@ -139,4 +152,5 @@ n'avez pas besoin.
 
 ## Licence
 
-MIT — voir `LICENSE`.
+Dépôt privé — **tous droits réservés**, voir `LICENSE`. À passer en MIT si le projet est un jour
+ouvert.

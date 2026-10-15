@@ -218,8 +218,8 @@ l'expose.<br><br>
 comportent un risque de perte et un risque de dépendance. Jouez uniquement de l'argent dont vous
 n'avez pas besoin.
 </div>
-<footer>Projet open source · les probabilités proviennent des cotes publiées par les opérateurs ·
-aucun contenu de cette page ne constitue une recommandation de pari.</footer>
+<footer>Page générée automatiquement · les probabilités proviennent des cotes publiées par les
+opérateurs · aucun contenu de cette page ne constitue une recommandation de pari.</footer>
 </div></body></html>"""
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
