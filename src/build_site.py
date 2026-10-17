@@ -678,6 +678,41 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       border-radius: 12px; font-size: 11px;
     }}
 
+    /* Date Timeline Bar */
+    .date-bar {{
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+      background: var(--card-bg); border: 1px solid var(--card-border);
+      padding: 12px 16px; border-radius: 12px; margin-bottom: 14px;
+    }}
+    .date-presets {{
+      display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    }}
+    .date-pill {{
+      background: var(--badge-bg); color: var(--text-muted); border: 1px solid var(--card-border);
+      padding: 6px 13px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s ease;
+    }}
+    .date-pill:hover {{ color: #fff; border-color: var(--primary); }}
+    .date-pill.active {{
+      background: var(--primary); color: #fff; border-color: var(--primary);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+    }}
+    .pill-count {{
+      background: rgba(255, 255, 255, 0.2); padding: 1px 6px; border-radius: 10px; font-size: 11px;
+    }}
+    .date-picker-wrap {{
+      display: flex; align-items: center; gap: 8px;
+    }}
+    .date-input {{
+      background: #0b101b; border: 1px solid var(--card-border); color: #fff;
+      padding: 6px 10px; border-radius: 8px; font-size: 13px; outline: none; cursor: pointer;
+    }}
+    .date-input:focus {{ border-color: var(--primary); }}
+    .btn-clear-date {{
+      background: none; border: none; color: #ef4444; font-size: 18px; cursor: pointer;
+      line-height: 1; padding: 0 4px;
+    }}
+
     /* Filter Controls */
     .filter-panel {{
       background: var(--card-bg); border: 1px solid var(--card-border);
@@ -914,6 +949,29 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     </button>
   </div>
 
+  <!-- Date Timeline Bar -->
+  <div class="date-bar" id="date-bar">
+    <div class="date-presets">
+      <button class="date-pill active" id="date-pill-all" onclick="setDateFilter('all')">
+        🌐 Tous les jours <span class="pill-count" id="count-date-all">0</span>
+      </button>
+      <button class="date-pill" id="date-pill-yesterday" onclick="setDateFilter('yesterday')">
+        ⏪ Hier <span class="pill-count" id="count-date-yesterday">0</span>
+      </button>
+      <button class="date-pill" id="date-pill-today" onclick="setDateFilter('today')">
+        ⚡ Aujourd'hui <span class="pill-count" id="count-date-today">0</span>
+      </button>
+      <button class="date-pill" id="date-pill-tomorrow" onclick="setDateFilter('tomorrow')">
+        ⏩ Demain <span class="pill-count" id="count-date-tomorrow">0</span>
+      </button>
+    </div>
+    <div class="date-picker-wrap">
+      <span style="font-size: 13px; color: var(--text-muted);">📅 Calendrier :</span>
+      <input type="date" class="date-input" id="custom-date-picker" onchange="onCustomDateChange(this.value)">
+      <button class="btn-clear-date" id="btn-clear-date" onclick="clearDateFilter()" title="Réinitialiser la date" style="display: none;">&times;</button>
+    </div>
+  </div>
+
   <!-- Filter & Search Bar -->
   <div class="filter-panel" id="filter-bar">
     <input type="text" class="search-input" id="search-box" placeholder="🔍 Rechercher une équipe, un match..." oninput="applyFilters()">
@@ -1105,9 +1163,12 @@ def generate_html(rows, combos, stats, source, demo, now_str):
   window.APP_DATA = {json_embedded};
 
   let slipSelections = [];
+  let currentDateFilter = 'all';
+  let customDateValue = '';
 
   function initApp() {{
     populateLeagues();
+    updateDateCounts();
     applyFilters();
   }}
 
@@ -1129,11 +1190,98 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     document.getElementById('tab-' + tabId).style.display = 'block';
 
     const filterBar = document.getElementById('filter-bar');
+    const dateBar = document.getElementById('date-bar');
     if (tabId === 'probables' || tabId === 'value') {{
       filterBar.style.display = 'flex';
+      if (dateBar) dateBar.style.display = 'flex';
     }} else {{
       filterBar.style.display = 'none';
+      if (dateBar) dateBar.style.display = 'none';
     }}
+  }}
+
+  function formatDateLocal(d) {{
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${{y}}-${{m}}-${{day}}`;
+  }}
+
+  function getEventDateStr(isoStr) {{
+    if (!isoStr) return '';
+    try {{
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      return formatDateLocal(d);
+    }} catch (e) {{
+      return '';
+    }}
+  }}
+
+  function setDateFilter(mode) {{
+    currentDateFilter = mode;
+    customDateValue = '';
+    const dateInput = document.getElementById('custom-date-picker');
+    if (dateInput) dateInput.value = '';
+    const clearBtn = document.getElementById('btn-clear-date');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    document.querySelectorAll('.date-pill').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById('date-pill-' + mode);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    applyFilters();
+  }}
+
+  function onCustomDateChange(val) {{
+    if (!val) {{
+      setDateFilter('all');
+      return;
+    }}
+    currentDateFilter = 'custom';
+    customDateValue = val;
+    document.querySelectorAll('.date-pill').forEach(btn => btn.classList.remove('active'));
+    const clearBtn = document.getElementById('btn-clear-date');
+    if (clearBtn) clearBtn.style.display = 'inline-block';
+
+    applyFilters();
+  }}
+
+  function clearDateFilter() {{
+    setDateFilter('all');
+  }}
+
+  function updateDateCounts() {{
+    const items = window.APP_DATA.selections || [];
+    const now = new Date();
+    const todayStr = formatDateLocal(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDateLocal(yesterday);
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = formatDateLocal(tomorrow);
+
+    let cntAll = items.length;
+    let cntYest = 0;
+    let cntToday = 0;
+    let cntTom = 0;
+
+    items.forEach(r => {{
+      const d = getEventDateStr(r.kickoff);
+      if (d === yesterdayStr) cntYest++;
+      else if (d === todayStr) cntToday++;
+      else if (d === tomorrowStr) cntTom++;
+    }});
+
+    const elAll = document.getElementById('count-date-all');
+    if (elAll) elAll.textContent = cntAll;
+    const elYest = document.getElementById('count-date-yesterday');
+    if (elYest) elYest.textContent = cntYest;
+    const elToday = document.getElementById('count-date-today');
+    if (elToday) elToday.textContent = cntToday;
+    const elTom = document.getElementById('count-date-tomorrow');
+    if (elTom) elTom.textContent = cntTom;
   }}
 
   function formatKickoff(isoStr) {{
@@ -1190,6 +1338,25 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     const sortBy = document.getElementById('sort-selector').value;
 
     let items = [...(window.APP_DATA.selections || [])];
+
+    const now = new Date();
+    const todayStr = formatDateLocal(now);
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = formatDateLocal(yesterday);
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = formatDateLocal(tomorrow);
+
+    if (currentDateFilter === 'today') {{
+      items = items.filter(r => getEventDateStr(r.kickoff) === todayStr);
+    }} else if (currentDateFilter === 'yesterday') {{
+      items = items.filter(r => getEventDateStr(r.kickoff) === yesterdayStr);
+    }} else if (currentDateFilter === 'tomorrow') {{
+      items = items.filter(r => getEventDateStr(r.kickoff) === tomorrowStr);
+    }} else if (currentDateFilter === 'custom' && customDateValue) {{
+      items = items.filter(r => getEventDateStr(r.kickoff) === customDateValue);
+    }}
 
     if (query) {{
       items = items.filter(r => (r.match + ' ' + r.sel + ' ' + (r.market_type || '')).toLowerCase().includes(query));
