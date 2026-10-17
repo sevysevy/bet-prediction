@@ -28,6 +28,14 @@ import feeds                                                    # noqa: E402
 from feeds import norm_oddspapi, norm_theodds, norm_pinnapi, modele_commun, pick_sharp, get, KEYS   # noqa: E402
 from maths import devig_multiplicative, compute_ev, kelly_fraction, compound_combination           # noqa: E402
 import journal                                                  # noqa: E402
+try:
+    from portals.portal1_double_tier import filter_portal_1
+    from portals.portal2_sharpe import filter_portal_2
+    from portals.portal3_hard_filter import filter_portal_3
+except ImportError:
+    from src.portals.portal1_double_tier import filter_portal_1
+    from src.portals.portal2_sharpe import filter_portal_2
+    from src.portals.portal3_hard_filter import filter_portal_3
 
 MIN_PROB_LEG = 0.70
 MAX_LEGS = 4
@@ -595,11 +603,18 @@ FIX_DEMO = [
 
 
 # ------------------------------------------------------------------ Génération du site moderne
-def generate_html(rows, combos, stats, source, demo, now_str):
+def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, portal2=None, portal3=None):
     """
     Produit une Single Page Application moderne, responsive et réactive.
     Styles CSS modernes intégrés, interactions JavaScript vanille sans dépendance.
     """
+    if portal1 is None:
+        portal1 = filter_portal_1(rows, arbitration="safest")
+    if portal2 is None:
+        portal2 = filter_portal_2(rows, top_n=35)
+    if portal3 is None:
+        portal3 = filter_portal_3(rows)
+
     leagues_seen = {}
     for r in rows:
         lg_name = r.get("league")
@@ -617,6 +632,9 @@ def generate_html(rows, combos, stats, source, demo, now_str):
         "demo": demo,
         "stats": stats,
         "selections": rows,
+        "portal1": portal1,
+        "portal2": portal2,
+        "portal3": portal3,
         "combos": [{k: v for k, v in c.items() if k != "raw_legs"} for c in combos],
         "leagues": list(leagues_seen.values())
     }
@@ -693,6 +711,181 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       padding: 12px 18px; border-radius: 10px; margin-bottom: 20px;
       display: flex; align-items: center; justify-content: space-between; gap: 12px;
       color: #fbbf24; font-size: 13.5px;
+    }}
+
+    /* Portal Switcher & Anti-Noise Dashboard */
+    .portal-banner {{
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.95) 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 16px 18px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+    }}
+    .portal-header-line {{
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 12px;
+    }}
+    .portal-title-block h2 {{
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }}
+    .portal-title-block p {{
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }}
+    .portal-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 10px;
+    }}
+    .portal-card {{
+      background: var(--badge-bg);
+      border: 1.5px solid var(--card-border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      user-select: none;
+    }}
+    .portal-card:hover {{
+      border-color: rgba(59, 130, 246, 0.5);
+      transform: translateY(-1px);
+    }}
+    .portal-card.active {{
+      border-color: var(--primary);
+      background: linear-gradient(145deg, rgba(59, 130, 246, 0.18) 0%, rgba(37, 99, 235, 0.08) 100%);
+      box-shadow: 0 0 0 1px var(--primary), 0 4px 12px rgba(37, 99, 235, 0.25);
+    }}
+    .portal-card-top {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }}
+    .portal-card-title {{
+      font-size: 13px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }}
+    .portal-card-badge {{
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }}
+    .portal-card.active .portal-card-badge {{
+      background: var(--primary);
+      color: #fff;
+    }}
+    .portal-card-desc {{
+      font-size: 11.5px;
+      color: var(--text-muted);
+      line-height: 1.35;
+    }}
+    .portal-info-box {{
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+
+    /* Portal-Specific Badges */
+    .badge-tier-safe {{
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }}
+    .badge-tier-value {{
+      background: rgba(168, 85, 247, 0.18);
+      color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.45);
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }}
+    .badge-bqi {{
+      background: rgba(59, 130, 246, 0.18);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.45);
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }}
+    .badge-bqi-grade-aplus {{
+      background: #10b981;
+      color: #000;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 10px;
+    }}
+    .badge-bqi-grade-a {{
+      background: #3b82f6;
+      color: #fff;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 10px;
+    }}
+    .badge-bqi-grade-bplus {{
+      background: #f59e0b;
+      color: #000;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 10px;
+    }}
+    .badge-p3-elite {{
+      background: rgba(245, 158, 11, 0.18);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      font-weight: 700;
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
     }}
 
     /* Navigation Tabs */
@@ -992,13 +1185,67 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     </div>
   </div>
 
+  <!-- Sélecteur de Portail Stratégique Anti-Bruit -->
+  <div class="portal-banner">
+    <div class="portal-header-line">
+      <div class="portal-title-block">
+        <h2>⚡ Stratégie de Sélection & Anti-Bruit (3 Portails en Test)</h2>
+        <p>Filtrage de pointe des cotes à 1% et arbitrage strict : 1 seul pari retenu par match. Ré-évaluation dynamique à chaque actualisation.</p>
+      </div>
+      <div style="font-size: 11.5px; color: var(--text-muted); background: rgba(0,0,0,0.35); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--card-border);">
+        🚫 <strong>Corbeille</strong> : p &lt; 40% exclu d'office
+      </div>
+    </div>
+    <div class="portal-grid">
+      <div class="portal-card active" id="portal-btn-portal1" onclick="switchPortal('portal1')">
+        <div class="portal-card-top">
+          <span class="portal-card-title">🛡️ Portail 1 : Double Palier</span>
+          <span class="portal-card-badge" id="badge-count-portal1">{len(portal1)}</span>
+        </div>
+        <div class="portal-card-desc">
+          <strong>Coffre-Fort</strong> (p &ge; 65%) + <strong>Pépites Value</strong> (p &ge; 45%, EV &gt; 1%). Réussite moyenne ~71%.
+        </div>
+      </div>
+      <div class="portal-card" id="portal-btn-portal2" onclick="switchPortal('portal2')">
+        <div class="portal-card-top">
+          <span class="portal-card-title">📈 Portail 2 : Ratio de Sharpe</span>
+          <span class="portal-card-badge" id="badge-count-portal2">{len(portal2)}</span>
+        </div>
+        <div class="portal-card-desc">
+          Top 35 Quantitatif (Markowitz & Kelly). Score BQI /100 & Grades A+/A/B+. Variance pénalisée.
+        </div>
+      </div>
+      <div class="portal-card" id="portal-btn-portal3" onclick="switchPortal('portal3')">
+        <div class="portal-card-top">
+          <span class="portal-card-title">🎯 Portail 3 : Filtre Dur Sécuritaire</span>
+          <span class="portal-card-badge" id="badge-count-portal3">{len(portal3)}</span>
+        </div>
+        <div class="portal-card-desc">
+          Zéro compromis : p &ge; 55%, cotes 1.35 à 2.30, EV &ge; 0%, marge Pinnacle &le; 5%.
+        </div>
+      </div>
+      <div class="portal-card" id="portal-btn-all" onclick="switchPortal('all')">
+        <div class="portal-card-top">
+          <span class="portal-card-title">🌐 Flux Complet Brut</span>
+          <span class="portal-card-badge">{len(rows)}</span>
+        </div>
+        <div class="portal-card-desc">
+          Toutes les sélections brutes des bookmakers sans filtre anti-bruit (mode comparaison).
+        </div>
+      </div>
+    </div>
+    <div class="portal-info-box" id="portal-info-box">
+      <!-- Rempli dynamiquement par JS -->
+    </div>
+  </div>
+
   <!-- Tabs Navigation -->
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('probables')">
-      🎯 Plus Probables <span class="tab-count" id="count-probables">{len(rows)}</span>
+      🎯 Plus Probables <span class="tab-count" id="count-probables">{len(portal1)}</span>
     </button>
     <button class="tab-btn" onclick="switchTab('value')">
-      💎 Value Bets (EV &gt; 0) <span class="tab-count" id="count-value">{len([r for r in rows if r['ev'] > 0])}</span>
+      💎 Value Bets (EV &gt; 0) <span class="tab-count" id="count-value">{len([r for r in portal1 if r['ev'] > 0])}</span>
     </button>
     <button class="tab-btn" onclick="switchTab('combos')">
       🔗 Combinés Filtrés <span class="tab-count">{len(combos)}</span>
@@ -1065,6 +1312,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       <span style="font-size: 13px; color: var(--text-muted);">Trier par:</span>
       <select class="select-dropdown" id="sort-selector" onchange="applyFilters()">
         <option value="prob-desc">Probabilité (Max → Min)</option>
+        <option value="bqi-desc">Score BQI / Sharpe (Max → Min)</option>
         <option value="ev-desc">EV (Meilleure → Moins bonne)</option>
         <option value="odds-asc">Cote (Plus basse → Plus haute)</option>
       </select>
@@ -1227,11 +1475,52 @@ def generate_html(rows, combos, stats, source, demo, now_str):
   let slipSelections = [];
   let currentDateFilter = 'all';
   let customDateValue = '';
+  let currentPortal = 'portal1';
+
+  const PORTAL_INFOS = {{
+    'portal1': {{
+      title: '🛡️ Portail 1 : Double Palier Stratégique (Coffre-Fort & Pépites Value)',
+      desc: 'Sépare les opportunités en deux tiers étanches : les bases ultra-solides (p &ge; 65%, strike rate visé 75%) et les pépites sous-évaluées par le marché (p &ge; 45%, EV &gt; +1%). Règle stricte : <strong>1 seul pari par match</strong> (sélection la plus sécuritaire). Tout pari &lt; 40% est banni.'
+    }},
+    'portal2': {{
+      title: '📈 Portail 2 : Ratio de Sharpe Sportif (Modèle Quantitatif Markowitz)',
+      desc: 'Optimisation rendement / risque (Sharpe = EV / &sigma;). Les cotes monstres et les outsiders &lt; 40% sont lourdement pénalisés. Chaque sélection reçoit un <strong>Bet Quality Index (BQI /100)</strong> et un Grade (A+, A, B+). Seul le Top 35 mondial est retenu.'
+    }},
+    'portal3': {{
+      title: '🎯 Portail 3 : Filtre Dur Sécuritaire (Anti-Bruit Strict)',
+      desc: 'Aucune tolérance statistique : probabilité sharp minimale de 55%, cote strictement bornée entre 1.35 et 2.30, espérance EV &ge; 0% et liquidité institutionnelle vérifiée (marge Pinnacle &le; 5%). Les paris les plus purs.'
+    }},
+    'all': {{
+      title: '🌐 Flux Brut Exhaustif (Bookmaker Feed non filtré)',
+      desc: 'Affiche l\'intégralité des signaux bruts collectés auprès des bookmakers sans filtre anti-bruit ni déduplication par match. Utilisé pour comparer et auditer le volume de bruit éliminé.'
+    }}
+  }};
+
+  function getPortalItems() {{
+    if (currentPortal === 'all') {{
+      return window.APP_DATA.selections || [];
+    }}
+    return window.APP_DATA[currentPortal] || window.APP_DATA.selections || [];
+  }}
+
+  function switchPortal(portalKey) {{
+    currentPortal = portalKey;
+    document.querySelectorAll('.portal-card').forEach(c => c.classList.remove('active'));
+    const btn = document.getElementById('portal-btn-' + portalKey);
+    if (btn) btn.classList.add('active');
+
+    const infoBox = document.getElementById('portal-info-box');
+    if (infoBox && PORTAL_INFOS[portalKey]) {{
+      infoBox.innerHTML = `<span><strong>${{PORTAL_INFOS[portalKey].title}}</strong> : ${{PORTAL_INFOS[portalKey].desc}}</span>`;
+    }}
+
+    updateDateCounts();
+    applyFilters();
+  }}
 
   function initApp() {{
     populateLeagues();
-    updateDateCounts();
-    applyFilters();
+    switchPortal('portal1');
   }}
 
   function populateLeagues() {{
@@ -1314,7 +1603,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
   }}
 
   function updateDateCounts() {{
-    const items = window.APP_DATA.selections || [];
+    const items = getPortalItems();
     const now = new Date();
     const todayStr = formatDateLocal(now);
     const yesterday = new Date(now);
@@ -1391,6 +1680,22 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     return '';
   }}
 
+  function renderPortalBadge(r) {{
+    if (r.tier === 'coffre_fort') {{
+      return `<span class="badge badge-tier-safe">🛡️ Coffre-Fort</span>`;
+    }} else if (r.tier === 'pepite_value') {{
+      return `<span class="badge badge-tier-value">💎 Pépite Value</span>`;
+    }} else if (r.tier === 'p3_elite') {{
+      return `<span class="badge badge-p3-elite">🎯 Élite Sécuritaire</span>`;
+    }} else if (r.bet_quality_index !== undefined) {{
+      let gradeClass = 'badge-bqi-grade-bplus';
+      if (r.bet_grade === 'A+') gradeClass = 'badge-bqi-grade-aplus';
+      else if (r.bet_grade === 'A') gradeClass = 'badge-bqi-grade-a';
+      return `<span class="badge badge-bqi">⚡ BQI ${{r.bet_quality_index.toFixed(0)}}/100 <span class="${{gradeClass}}">${{escapeHtml(r.bet_grade || '')}}</span></span>`;
+    }}
+    return '';
+  }}
+
   function applyFilters() {{
     const query = document.getElementById('search-box').value.toLowerCase();
     const market = document.getElementById('market-filter')?.value;
@@ -1399,7 +1704,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     const statusFilter = document.getElementById('status-filter')?.value;
     const sortBy = document.getElementById('sort-selector').value;
 
-    let items = [...(window.APP_DATA.selections || [])];
+    let items = [...getPortalItems()];
 
     const now = new Date();
     const todayStr = formatDateLocal(now);
@@ -1446,6 +1751,8 @@ def generate_html(rows, combos, stats, source, demo, now_str):
 
     if (sortBy === 'prob-desc') {{
       items.sort((a, b) => b.prob - a.prob);
+    }} else if (sortBy === 'bqi-desc') {{
+      items.sort((a, b) => (b.bet_quality_index || 0) - (a.bet_quality_index || 0));
     }} else if (sortBy === 'ev-desc') {{
       items.sort((a, b) => b.ev - a.ev);
     }} else if (sortBy === 'odds-asc') {{
@@ -1455,6 +1762,18 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     renderProbablesTable(items);
     renderValueTable(items.filter(r => r.ev > 0));
     renderCombos();
+
+    // Mettre à jour les compteurs des onglets
+    const countProbEl = document.getElementById('count-probables');
+    if (countProbEl) countProbEl.textContent = items.length;
+    const countValEl = document.getElementById('count-value');
+    if (countValEl) countValEl.textContent = items.filter(r => r.ev > 0).length;
+
+    // Mettre à jour les indicateurs du portail
+    const statTotalEl = document.getElementById('stat-total-selections');
+    if (statTotalEl) statTotalEl.textContent = items.length;
+    const statValEl = document.getElementById('stat-value-bets');
+    if (statValEl) statValEl.textContent = items.filter(r => r.ev > 0).length;
   }}
 
   function renderProbablesTable(rows) {{
@@ -1486,6 +1805,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           ${{r.market_type ? `<div style="margin-bottom: 4px;"><span class="badge badge-market">${{escapeHtml(r.market_type)}}</span></div>` : ''}}
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+            ${{renderPortalBadge(r)}}
             ${{renderOutcomeBadge(r)}}
           </div>
         </td>
@@ -1545,6 +1865,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           ${{r.market_type ? `<div style="margin-bottom: 4px;"><span class="badge badge-market">${{escapeHtml(r.market_type)}}</span></div>` : ''}}
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <span style="color: var(--success); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+            ${{renderPortalBadge(r)}}
             ${{renderOutcomeBadge(r)}}
           </div>
         </td>
@@ -1774,8 +2095,13 @@ def main():
     else:
         stats = {"total_signals": len(rows), "positive_ev_count": len([r for r in rows if r["ev"] > 0])}
 
+    portal1_rows = filter_portal_1(rows, arbitration="safest")
+    portal2_rows = filter_portal_2(rows, top_n=35)
+    portal3_rows = filter_portal_3(rows)
+
     now_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
-    html_content = generate_html(rows, combos, stats, source, demo, now_str)
+    html_content = generate_html(rows, combos, stats, source, demo, now_str,
+                                 portal1=portal1_rows, portal2=portal2_rows, portal3=portal3_rows)
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
@@ -1790,10 +2116,13 @@ def main():
             "demo": demo,
             "stats": stats,
             "selections": rows,
+            "portal1": portal1_rows,
+            "portal2": portal2_rows,
+            "portal3": portal3_rows,
             "combos": [{k: v for k, v in c.items() if k != "raw_legs"} for c in combos]
         }, f, indent=2, ensure_ascii=False)
 
-    print(f"[OK] {len(rows)} selections | {len(combos)} combines optimises | {len(events)} evenements -> {a.out}")
+    print(f"[OK] {len(rows)} selections (P1:{len(portal1_rows)}, P2:{len(portal2_rows)}, P3:{len(portal3_rows)}) | {len(combos)} combines optimises | {len(events)} evenements -> {a.out}")
 
 
 if __name__ == "__main__":

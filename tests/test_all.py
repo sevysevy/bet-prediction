@@ -304,5 +304,31 @@ class TestRefreshAuthAndForce(unittest.TestCase):
                 del os.environ["FORCE_REFRESH"]
 
 
+try:
+    from test_portal1 import TestPortal1Unit, TestPortal1IntegrationDataJson
+except ImportError:
+    try:
+        from tests.test_portal1 import TestPortal1Unit, TestPortal1IntegrationDataJson
+    except ImportError:
+        pass
+
+try:
+    from test_portal2 import TestPortal2Sharpe
+except ImportError:
+    try:
+        from tests.test_portal2 import TestPortal2Sharpe
+    except ImportError:
+        pass
+
+try:
+    from test_portal3 import TestPortal3HardFilter
+except ImportError:
+    try:
+        from tests.test_portal3 import TestPortal3HardFilter
+    except ImportError:
+        pass
+
+
 if __name__ == "__main__":
     unittest.main()
+

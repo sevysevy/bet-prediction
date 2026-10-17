@@ -434,6 +434,17 @@ def get(url, params, timeout=20, cache_ttl_s: int = 600, force: bool = False):
                 err_detail = raw_body[:160]
         except Exception:
             pass
+
+        # Si le quota est atteint ou le service indisponible, repli sur le cache local s'il existe
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                    print(f"  [info] Erreur HTTP {exc.code} (quota/réseau) : utilisation du cache local de repli", file=sys.stderr)
+                    return cached_data["payload"], cached_data.get("headers", {})
+            except Exception:
+                pass
+
         msg = f"HTTP Error {exc.code}: {exc.reason}"
         if err_detail:
             msg += f" — Détail : {err_detail}"
