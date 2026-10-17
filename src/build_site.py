@@ -374,8 +374,10 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
         outcome = None
         home_score = sc.get("home_score") if sc else None
         away_score = sc.get("away_score") if sc else None
+        diff_min = (now - dt).total_seconds() / 60 if dt else 0
+        is_completed = bool(sc and sc.get("completed")) or (dt and diff_min > 135)
 
-        if sc and sc.get("completed"):
+        if is_completed:
             status = "FINISHED"
             score_str = f"{home_score} - {away_score}" if (home_score is not None and away_score is not None) else "Terminé"
             outcome = evaluate_outcome(r.get("market_type"), r.get("sel"), home_raw, away_raw, home_score, away_score)
@@ -383,13 +385,8 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
             status = "LIVE"
             score_str = f"{home_score} - {away_score}"
         elif dt and dt < now:
-            diff_min = (now - dt).total_seconds() / 60
-            if diff_min > 135:
-                status = "FINISHED"
-                score_str = "Terminé"
-            else:
-                status = "LIVE"
-                score_str = "En direct"
+            status = "LIVE"
+            score_str = "En direct"
 
         # Pour les matches LIVE ou FINISHED, on conserve l'évaluation pré-match d'origine
         if status in ("LIVE", "FINISHED"):
