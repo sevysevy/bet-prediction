@@ -27,6 +27,23 @@ try:
 except ImportError:
     from src.maths import devig_multiplicative, kelly_fraction, compute_ev
 
+# Auto-chargement du fichier .env sans dépendance externe
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_env_path = os.path.join(ROOT, ".env")
+if os.path.exists(_env_path):
+    try:
+        with open(_env_path, encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#") or "=" not in _line:
+                    continue
+                _k, _v = _line.split("=", 1)
+                _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+                if _k and _v and not os.environ.get(_k):
+                    os.environ[_k] = _v
+    except Exception:
+        pass
+
 # ------------------------------------------------------------------ clés
 KEYS = {
     "theoddsapi": os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY"),

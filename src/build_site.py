@@ -81,14 +81,17 @@ def collect_theodds(api_key):
 
 
 def collect():
-    if KEYS["oddspapi"]:
+    oddspapi_key = os.environ.get("ODDSPAPI_KEY")
+    theodds_key = os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY")
+
+    if oddspapi_key:
         try:
-            return collect_oddspapi(KEYS["oddspapi"])
+            return collect_oddspapi(oddspapi_key)
         except Exception as exc:
             print(f"  [!] oddspapi : {exc}", file=sys.stderr)
-    if KEYS["theoddsapi"]:
+    if theodds_key:
         try:
-            return collect_theodds(KEYS["theoddsapi"])
+            return collect_theodds(theodds_key)
         except Exception as exc:
             print(f"  [!] theoddsapi : {exc}", file=sys.stderr)
     raise RuntimeError("aucune source disponible (renseignez ODDSPAPI_KEY ou THEODDSAPI_KEY)")
