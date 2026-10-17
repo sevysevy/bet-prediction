@@ -1472,6 +1472,16 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
 <script>
   window.APP_DATA = {json_embedded};
 
+  function escapeHtml(str) {{
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }}
+
   let slipSelections = [];
   let currentDateFilter = 'all';
   let customDateValue = '';
