@@ -284,15 +284,22 @@ def norm_pinnapi(payload: list) -> list:
 
 
 # ------------------------------------------------------------------ schéma commun -> référence
-def pick_sharp(books):
-    """Référence = le bookmaker avec la plus faible marge (ou hint sharp)."""
+def pick_sharp(books, max_sharp_margin: float = 0.08):
+    """
+    Référence = le bookmaker avec la plus faible marge (ou hint sharp).
+    Rejette impérativement les bookmakers à marge anormale (> 8%) qui correspondent
+    à des marchés illiquides, sans volume ou avec des ordres aberrants de test.
+    """
     if not books:
         return None
-    # Favorise les books de type sharp connus si présents
-    known_sharps = [b for b in books if any(h in b["name"].lower() for h in SHARP_HINTS)]
+    # Favorise les books de type sharp connus SI leur marge est réelle et compétitive (<= 8%)
+    known_sharps = [b for b in books if any(h in b["name"].lower() for h in SHARP_HINTS) and b.get("margin", 1.0) <= max_sharp_margin]
     if known_sharps:
         return min(known_sharps, key=lambda b: b["margin"])
-    return min(books, key=lambda b: b["margin"])
+    valid_books = [b for b in books if b.get("margin", 1.0) <= max_sharp_margin]
+    if valid_books:
+        return min(valid_books, key=lambda b: b["margin"])
+    return None
 
 
 def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True):
