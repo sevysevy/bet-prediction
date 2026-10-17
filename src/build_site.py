@@ -267,7 +267,7 @@ def evaluate_outcome(market_type, sel, home, away, home_score, away_score):
     """
     if home_score is None or away_score is None:
         return None
-    market_type = str(market_type or "").lower()
+    market_type = str(market_type or "1x2").lower()
     sel_lower = str(sel or "").lower()
     norm_h = norm_team_key(home)
     norm_a = norm_team_key(away)
@@ -323,13 +323,27 @@ def evaluate_outcome(market_type, sel, home, away, home_score, away_score):
     return None
 
 
-def enrich_rows_with_scores(rows, scores_map):
+def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
     """
     Enrichit chaque ligne avec le statut temporel (UPCOMING, LIVE, FINISHED),
-    le score s'il est connu, et l'évaluation du pronostic (WON, LOST, PUSH).
-    Intègre également les matches terminés des dernières 48h.
+    le score officiel s'il est connu, et l'évaluation du pronostic (WON, LOST, PUSH).
+
+    Pour les matches en cours (LIVE) ou terminés (FINISHED) :
+    - Conserve ou restaure les DERNIÈRES ÉVALUATIONS PRÉ-MATCH authentiques
+      (probabilité fair sharp, cote offerte, bookmaker, EV, mise Kelly).
+    - Évalue le résultat réel (Gagné / Perdu) sans jamais injecter de fausses cotes 1.00 à 100%.
+    - Pour les matches terminés absents du flux live (/odds), charge leur pronostic pré-match
+      depuis le journal SQLite pour offrir une véritable vision historique des tendances.
     """
     now = datetime.datetime.now(datetime.timezone.utc)
+    from leagues import resolve_league
+
+    if prematch_db is None:
+        try:
+            prematch_db = journal.get_prematch_by_pair()
+        except Exception:
+            prematch_db = {}
+
     for r in rows:
         ko = r.get("kickoff")
         dt = None
@@ -370,6 +384,22 @@ def enrich_rows_with_scores(rows, scores_map):
                 status = "LIVE"
                 score_str = "En direct"
 
+        # Pour les matches LIVE ou FINISHED, on conserve l'évaluation pré-match d'origine
+        if status in ("LIVE", "FINISHED"):
+            pm_sels = prematch_db.get((h, a)) or prematch_db.get((a, h))
+            if pm_sels:
+                pm = pm_sels.get(r.get("sel"))
+                if pm:
+                    r["prob"] = pm["prob_fair"]
+                    r["price"] = pm["odds_offered"]
+                    r["book"] = pm["bookmaker"]
+                    r["ev"] = pm["ev"]
+                    r["kelly_quarter"] = pm.get("kelly_stake_pct", 0.0)
+                    if pm.get("sharp_ref"):
+                        r["sharp"] = pm["sharp_ref"]
+                    if pm.get("sharp_margin"):
+                        r["sharp_margin"] = pm["sharp_margin"]
+
         r["status"] = status
         r["score_str"] = score_str
         r["outcome"] = outcome
@@ -377,7 +407,7 @@ def enrich_rows_with_scores(rows, scores_map):
         r["away_score"] = away_score
 
     # Intègre les matches terminés récents issus des scores officiels
-    from leagues import resolve_league
+    # UNIQUEMENT s'ils ont fait l'objet d'une évaluation pré-match enregistrée
     existing_pairs = set()
     for r in rows:
         parts = (r.get("match") or "").split(" - ")
@@ -396,42 +426,45 @@ def enrich_rows_with_scores(rows, scores_map):
             continue
         home_t = sc.get("home_team")
         away_t = sc.get("away_team")
-        if hs > as_:
-            winner = f"Victoire {home_t}"
-        elif as_ > hs:
-            winner = f"Victoire {away_t}"
-        else:
-            winner = "Match Nul (Draw)"
+
+        # Recherche des évaluations pré-match authentiques dans le journal
+        pm_sels = prematch_db.get((h, a)) or prematch_db.get((a, h))
+        if not pm_sels:
+            # Si le match n'a jamais été analysé en pré-match, on n'injecte PAS
+            # d'évaluation artificielle 100% / 1.00 pour ne pas fausser l'historique
+            continue
 
         lg_info = resolve_league(sc.get("league"))
-        rows.append({
-            "event_id": f"settled_{h}_{a}",
-            "match_id": f"settled_{h}_{a}",
-            "market_type": "1X2 (Résultat)",
-            "league": lg_info["name"],
-            "league_key": sc.get("league") or "general",
-            "country": lg_info["country"],
-            "flag": lg_info["flag"],
-            "badge_url": lg_info["badge_url"],
-            "kickoff": sc.get("commence_time"),
-            "match": f"{home_t} - {away_t}",
-            "sel": winner,
-            "prob": 1.0,
-            "price": 1.0,
-            "book": "Score Officiel",
-            "limit": None,
-            "age_s": None,
-            "book_margin": 0.0,
-            "sharp": "Pinnacle",
-            "sharp_margin": 0.0,
-            "ev": 0.0,
-            "kelly_quarter": 0.0,
-            "status": "FINISHED",
-            "score_str": f"{hs} - {as_}",
-            "outcome": "WON",
-            "home_score": hs,
-            "away_score": as_
-        })
+        for sel, pm in pm_sels.items():
+            outcome = evaluate_outcome("1X2", sel, home_t, away_t, hs, as_)
+            rows.append({
+                "event_id": pm.get("event_id") or f"settled_{h}_{a}",
+                "match_id": pm.get("event_id") or f"settled_{h}_{a}",
+                "market_type": "1X2 (Résultat)",
+                "league": pm.get("league") or lg_info["name"],
+                "league_key": sc.get("league") or "general",
+                "country": lg_info["country"],
+                "flag": lg_info["flag"],
+                "badge_url": lg_info["badge_url"],
+                "kickoff": pm.get("kickoff") or sc.get("commence_time"),
+                "match": f"{home_t} - {away_t}",
+                "sel": sel,
+                "prob": pm["prob_fair"],
+                "price": pm["odds_offered"],
+                "book": pm["bookmaker"],
+                "limit": None,
+                "age_s": None,
+                "book_margin": 0.05,
+                "sharp": pm.get("sharp_ref") or "Pinnacle",
+                "sharp_margin": pm.get("sharp_margin") or 0.02,
+                "ev": pm["ev"],
+                "kelly_quarter": pm.get("kelly_stake_pct", 0.0),
+                "status": "FINISHED",
+                "score_str": f"{hs} - {as_}",
+                "outcome": outcome,
+                "home_score": hs,
+                "away_score": as_
+            })
         existing_pairs.add((h, a))
         existing_pairs.add((a, h))
 

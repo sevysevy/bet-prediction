@@ -171,5 +171,88 @@ class TestFeeds(unittest.TestCase):
             self.assertAlmostEqual(sum(b["probs"].values()), 1.0, places=5)
 
 
+class TestEnrichmentAndHistory(unittest.TestCase):
+
+    def test_evaluate_outcome(self):
+        from build_site import evaluate_outcome
+        # 1X2
+        self.assertEqual(evaluate_outcome("1X2", "PSG", "PSG", "Monaco", 2, 0), "WON")
+        self.assertEqual(evaluate_outcome("1X2", "Monaco", "PSG", "Monaco", 2, 0), "LOST")
+        self.assertEqual(evaluate_outcome("1X2", "Draw", "PSG", "Monaco", 1, 1), "WON")
+        self.assertEqual(evaluate_outcome("1X2", "Match Nul", "PSG", "Monaco", 2, 0), "LOST")
+
+        # Over / Under
+        self.assertEqual(evaluate_outcome("Total Buts", "+2.5 Buts", "PSG", "Monaco", 2, 1), "WON")
+        self.assertEqual(evaluate_outcome("Total Buts", "+2.5 Buts", "PSG", "Monaco", 1, 0), "LOST")
+        self.assertEqual(evaluate_outcome("Total Buts", "-2.5 Buts", "PSG", "Monaco", 1, 0), "WON")
+
+        # BTTS
+        self.assertEqual(evaluate_outcome("Les 2 marquent", "Les 2 marquent : Oui", "PSG", "Monaco", 1, 1), "WON")
+        self.assertEqual(evaluate_outcome("Les 2 marquent", "Les 2 marquent : Oui", "PSG", "Monaco", 1, 0), "LOST")
+
+    def test_enrich_preserves_prematch_and_no_fake_odds(self):
+        from build_site import enrich_rows_with_scores
+        rows = [
+            {
+                "match": "Real Madrid - Barcelona",
+                "sel": "Real Madrid",
+                "prob": 0.55,
+                "price": 1.95,
+                "book": "Winamax",
+                "ev": 0.072,
+                "status": "UPCOMING",
+                "kickoff": "2026-10-18T20:00:00Z"
+            }
+        ]
+        scores_map = {
+            ("realmadrid", "barcelona"): {
+                "completed": True,
+                "home_team": "Real Madrid",
+                "away_team": "Barcelona",
+                "home_score": 2,
+                "away_score": 1,
+                "league": "soccer_spain_la_liga"
+            },
+            # Completed match NOT in rows and NOT in prematch_db
+            ("strasbourg", "paris"): {
+                "completed": True,
+                "home_team": "Strasbourg",
+                "away_team": "Paris",
+                "home_score": 0,
+                "away_score": 2,
+                "league": "soccer_france_ligue_one"
+            }
+        }
+        prematch_db = {
+            ("realmadrid", "barcelona"): {
+                "Real Madrid": {
+                    "match": "Real Madrid - Barcelona",
+                    "selection": "Real Madrid",
+                    "prob_fair": 0.55,
+                    "odds_offered": 1.95,
+                    "bookmaker": "Winamax",
+                    "ev": 0.072,
+                    "sharp_ref": "Pinnacle"
+                }
+            }
+        }
+
+        enrich_rows_with_scores(rows, scores_map, prematch_db=prematch_db)
+
+        # Real Madrid should be marked FINISHED with WON outcome, keeping its 1.95 odds and 55% prob
+        rm_row = [r for r in rows if r["match"] == "Real Madrid - Barcelona"][0]
+        self.assertEqual(rm_row["status"], "FINISHED")
+        self.assertEqual(rm_row["outcome"], "WON")
+        self.assertEqual(rm_row["price"], 1.95)
+        self.assertEqual(rm_row["prob"], 0.55)
+        self.assertEqual(rm_row["book"], "Winamax")
+        self.assertEqual(rm_row["score_str"], "2 - 1")
+
+        # Must NOT contain any fake "Score Officiel" or artificial 1.00 odds
+        for r in rows:
+            self.assertNotEqual(r.get("book"), "Score Officiel")
+            self.assertNotEqual(r.get("price"), 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,23 @@ import os
 import sqlite3
 from typing import Dict, List, Optional, Any
 
+try:
+    from feeds import norm_team_key
+except ImportError:
+    try:
+        from src.feeds import norm_team_key
+    except ImportError:
+        import re
+        def norm_team_key(s: str) -> str:
+            s = str(s or "").lower().strip()
+            s = re.sub(r'\bst\b', 'saint', s)
+            s = re.sub(r'\butd\b', 'united', s)
+            s = re.sub(r'\bman\b', 'manchester', s)
+            s = re.sub(r'\bsg\b', 'saint germain', s)
+            s = re.sub(r'\b(fc|cf|osc|rc|as|ac|ss|rb|fsv|sc|us|ogc|vfl|bvb|afc)\b', '', s)
+            s = re.sub(r'[^a-z0-9]', '', s)
+            return s
+
 DB_PATH_DEFAULT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "journal.db")
 
 
@@ -70,6 +87,16 @@ def log_recommendations(rows: List[Dict[str, Any]], batch_id: Optional[str] = No
     try:
         with conn:
             for r in rows:
+                if str(r.get("book") or "") == "Score Officiel":
+                    continue
+                if r.get("status") == "FINISHED":
+                    # Si le match est terminé, on met à jour le résultat dans le journal au lieu de dupliquer
+                    conn.execute("""
+                        UPDATE recommendations
+                        SET settled_result = ?
+                        WHERE match = ? AND selection = ? AND settled_result IS NULL
+                    """, (r.get("outcome"), str(r.get("match") or ""), str(r.get("sel") or "")))
+                    continue
                 conn.execute("""
                     INSERT INTO recommendations (
                         batch_id, event_id, league, match, kickoff, selection,
@@ -96,6 +123,41 @@ def log_recommendations(rows: List[Dict[str, Any]], batch_id: Optional[str] = No
     finally:
         conn.close()
     return inserted
+
+
+def get_prematch_by_pair(db_path: Optional[str] = None) -> Dict[tuple, Dict[str, Dict[str, Any]]]:
+    """
+    Retourne les dernières évaluations pré-match authentiques enregistrées dans le journal,
+    indexées par (norm_home, norm_away) et par sélection.
+    Ignore strictement les pseudos-cotes 'Score Officiel'.
+    """
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            cursor = conn.execute("""
+                SELECT match, kickoff, selection, prob_fair, odds_offered, bookmaker,
+                       sharp_ref, sharp_margin, ev, kelly_stake_pct, league, event_id, created_at
+                FROM recommendations
+                WHERE bookmaker != 'Score Officiel'
+                ORDER BY id DESC
+            """)
+            recs = cursor.fetchall()
+            result: Dict[tuple, Dict[str, Dict[str, Any]]] = {}
+            for r in recs:
+                m = r["match"] or ""
+                parts = m.split(" - ")
+                if len(parts) >= 2:
+                    h = norm_team_key(parts[0])
+                    a = norm_team_key(parts[1])
+                    pair = (h, a)
+                    if pair not in result:
+                        result[pair] = {}
+                    sel = r["selection"]
+                    if sel not in result[pair]:
+                        result[pair][sel] = dict(r)
+            return result
+    finally:
+        conn.close()
 
 
 def update_closing_odds(match: str, selection: str, closing_odds: float, db_path: Optional[str] = None) -> int:

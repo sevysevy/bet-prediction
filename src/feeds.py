@@ -17,6 +17,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -286,6 +287,18 @@ def norm_pinnapi(payload: list) -> list:
 
 
 # ------------------------------------------------------------------ schéma commun -> référence
+def norm_team_key(s: str) -> str:
+    """Normalise un nom d'équipe pour le rapprochement multi-sources et historique."""
+    s = str(s or "").lower().strip()
+    s = re.sub(r'\bst\b', 'saint', s)
+    s = re.sub(r'\butd\b', 'united', s)
+    s = re.sub(r'\bman\b', 'manchester', s)
+    s = re.sub(r'\bsg\b', 'saint germain', s)
+    s = re.sub(r'\b(fc|cf|osc|rc|as|ac|ss|rb|fsv|sc|us|ogc|vfl|bvb|afc)\b', '', s)
+    s = re.sub(r'[^a-z0-9]', '', s)
+    return s
+
+
 def pick_sharp(books, max_sharp_margin: float = 0.08):
     """
     Référence = le bookmaker avec la plus faible marge (ou hint sharp).
@@ -340,19 +353,9 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
             ev_val = compute_ev(p, best)
 
             # Contrôle de cohérence :
-            # 1. Les matches déjà commencés (LIVE) ne peuvent plus être pris en pré-match
-            # 2. Aucune vraie Value Bet dans le sport mondial ne dépasse +25% (au-delà, c'est un artefact)
-            now_utc = datetime.datetime.now(datetime.timezone.utc)
-            is_started = False
-            if ev.get("kickoff"):
-                try:
-                    dt = datetime.datetime.fromisoformat(ev["kickoff"].replace("Z", "+00:00"))
-                    if dt <= now_utc:
-                        is_started = True
-                except Exception:
-                    pass
-
-            if is_started or ev_val > 0.25:
+            # 1. Aucune vraie Value Bet dans le sport mondial ne dépasse +25% (au-delà, c'est un artefact de cotation)
+            # 2. Les événements live ou terminés conserveront leurs évaluations pré-match authentiques
+            if ev_val > 0.25:
                 ev_val = 0.0
                 k_quarter = 0.0
             else:
