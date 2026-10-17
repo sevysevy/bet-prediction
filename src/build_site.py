@@ -1124,7 +1124,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     }}
     .calc-row {{ display: flex; justify-content: space-between; }}
     .stake-input {{
-      width: 70px; background: #090d16; border: 1px solid #334155; color: #fff;
+      width: 90px; background: #090d16; border: 1px solid #334155; color: #fff;
       padding: 4px 6px; border-radius: 4px; text-align: right; font-family: 'JetBrains Mono', monospace;
     }}
     .slip-collapsed .slip-body {{ display: none; }}
@@ -1499,12 +1499,12 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
           <b class="mono" id="slip-cumul-ev">0.0%</b>
         </div>
         <div class="calc-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #334155;">
-          <span>Votre Bankroll (€) :</span>
-          <input type="number" class="stake-input" id="user-bankroll" value="500" oninput="updateSlipCalcs()">
+          <span>Votre Bankroll (XAF) :</span>
+          <input type="number" class="stake-input" id="user-bankroll" value="50000" step="1000" oninput="updateSlipCalcs()">
         </div>
         <div class="calc-row">
           <span>Mise conseillée (Kelly) :</span>
-          <b class="mono" style="color: var(--success);" id="slip-kelly-stake">0.00 €</b>
+          <b class="mono" style="color: var(--success);" id="slip-kelly-stake">0 XAF</b>
         </div>
       </div>
     </div>
@@ -2208,7 +2208,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       const fStar = (prob * b - q) / b;
       stake = Math.max(0, Math.min(bankroll * fStar * 0.25, bankroll * 0.05));
     }}
-    document.getElementById('slip-kelly-stake').textContent = stake > 0 ? stake.toFixed(2) + ' €' : '0.00 € (EV négative)';
+    document.getElementById('slip-kelly-stake').textContent = stake > 0 ? Math.round(stake).toLocaleString('fr-FR') + ' XAF' : '0 XAF (EV négative)';
   }}
 
   function toggleSlip() {{
