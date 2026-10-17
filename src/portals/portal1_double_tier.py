@@ -124,6 +124,11 @@ def classify_selection(
     if prob < noise_threshold:
         return None, None
 
+    # Exclusion stricte des sélections en direct (LIVE) pour éviter les artefacts in-play
+    # (ex: cotes pré-match associées à une probabilité faussée de fin de match)
+    if str(sel.get("status") or "").upper() == "LIVE":
+        return None, None
+
     # 1. Palier 1 'Coffre-Fort' (Bases Solides) : p >= 0.65, cote >= 1.25
     if prob >= min_prob_cf and price >= min_odds_cf:
         meta = {

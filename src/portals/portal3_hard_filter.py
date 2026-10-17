@@ -171,10 +171,12 @@ def filter_portal_3(
     # 1. Première passe : validation unitaire des critères durs
     qualified: List[Dict[str, Any]] = []
     for s in selections:
+        s_status = str(s.get("status") or "").upper()
         if allowed_statuses:
-            s_status = str(s.get("status") or "").upper()
             if s_status not in allowed_statuses:
                 continue
+        elif s_status == "LIVE":
+            continue
 
         ok, _ = evaluate_candidate(
             s,

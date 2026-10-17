@@ -383,7 +383,7 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
         home_score = sc.get("home_score") if sc else None
         away_score = sc.get("away_score") if sc else None
         diff_min = (now - dt).total_seconds() / 60 if dt else 0
-        is_completed = bool(sc and sc.get("completed")) or (dt and diff_min > 135)
+        is_completed = bool(sc and sc.get("completed")) or (dt and diff_min >= 105)
 
         if is_completed:
             status = "FINISHED"
@@ -394,7 +394,7 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
             score_str = f"{home_score} - {away_score}"
         elif dt and dt < now:
             status = "LIVE"
-            score_str = "En direct"
+            score_str = f"~{int(diff_min)}'" if diff_min > 0 else "En direct"
 
         # Pour les matches LIVE ou FINISHED, on conserve l'évaluation pré-match d'origine
         if status in ("LIVE", "FINISHED"):
@@ -1671,9 +1671,11 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
 
   function renderStatusBadge(r) {{
     if (r.status === 'LIVE') {{
-      return `<span class="badge badge-live">🔴 En direct ${{r.score_str ? escapeHtml(r.score_str) : ''}}</span>`;
+      const scoreTxt = (r.score_str && r.score_str !== 'En direct') ? ` (${{escapeHtml(r.score_str)}})` : '';
+      return `<span class="badge badge-live">🔴 En direct${{scoreTxt}}</span>`;
     }} else if (r.status === 'FINISHED') {{
-      return `<span class="badge badge-finished">🏁 Terminé ${{r.score_str ? `(${{escapeHtml(r.score_str)}})` : ''}}</span>`;
+      const scoreTxt = (r.score_str && r.score_str !== 'Terminé') ? ` (${{escapeHtml(r.score_str)}})` : '';
+      return `<span class="badge badge-finished">🏁 Terminé${{scoreTxt}}</span>`;
     }} else {{
       return `<span class="badge badge-upcoming">⏳ À venir</span>`;
     }}

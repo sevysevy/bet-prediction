@@ -253,10 +253,12 @@ def filter_portal_2(
         if not isinstance(sel, dict):
             continue
 
+        status = str(sel.get("status") or "").upper()
         if allowed_statuses:
-            status = str(sel.get("status") or "").upper()
             if status not in allowed_statuses:
                 continue
+        elif status == "LIVE":
+            continue
 
         prob = sel.get("prob")
         price = sel.get("price")
