@@ -116,14 +116,27 @@ def norm_theodds(payload: list) -> list:
 
 def norm_oddspapi(payload: list, participants: dict | None = None, tournaments: dict | None = None, markets: dict | None = None) -> list:
     """
-    Payload OddsPapi (/v4/odds-by-tournaments) -> schéma commun.
-    Extrait prioritairement le marché 1X2 Moneyline (ID '101') pour des probabilités
-    dévigorées pures et sans interférences avec les marchés dérivés (totals, spreads).
-    Résout les noms réels d'équipes et de compétitions via les dictionnaires fournis.
+    Payload OddsPapi (/v4/odds-by-tournaments) -> schéma commun multi-marchés.
+    Extrait et dévigorise de façon autonome chaque grand marché :
+      - 1X2 (Résultat du match)
+      - Buts (Over / Under 2.5, 1.5, 3.5)
+      - Les 2 équipes marquent (BTTS)
+      - Remboursé si Nul (DNB)
+    Chaque marché a ses probabilités pures normalisées sans interférence croisée.
     """
     tournaments_dict = tournaments or markets or {}
     now = datetime.datetime.now(datetime.timezone.utc)
     out = []
+
+    MARKET_SPECS = [
+        {"id": "101", "name": "1X2 (Résultat)", "slug": "1x2"},
+        {"id": "1010", "name": "Buts (+/- 2.5)", "slug": "tot_25", "val": "2.5"},
+        {"id": "108", "name": "Buts (+/- 1.5)", "slug": "tot_15", "val": "1.5"},
+        {"id": "1012", "name": "Buts (+/- 3.5)", "slug": "tot_35", "val": "3.5"},
+        {"id": "104", "name": "Les 2 marquent", "slug": "btts"},
+        {"id": "10214", "name": "Remboursé si Nul", "slug": "dnb"},
+    ]
+
     for fx in payload or []:
         p1_id = str(fx.get("participant1Id"))
         p2_id = str(fx.get("participant2Id"))
@@ -134,87 +147,115 @@ def norm_oddspapi(payload: list, participants: dict | None = None, tournaments: 
         t_info = (tournaments_dict.get(tourn_id) if isinstance(tournaments_dict, dict) else None) or {}
         league = t_info.get("tournamentSlug") or t_info.get("tournamentName") or tourn_id
         category = t_info.get("categoryName") or t_info.get("categorySlug")
+        fixture_id = str(fx.get("fixtureId"))
+        start_time = fx.get("startTime")
 
-        books = []
-        for bk, bd in (fx.get("bookmakerOdds") or {}).items():
-            markets_map = bd.get("markets") or {}
-            
-            # Recherche ciblée du marché 1X2 (ID '101' standard OddsPapi ou moneyline)
-            target_market = markets_map.get("101")
-            if not target_market:
-                for mid, mdata in markets_map.items():
-                    bm_id = str(mdata.get("bookmakerMarketId", "")).lower()
-                    if "moneyline" in bm_id or "1x2" in bm_id:
-                        target_market = mdata
-                        break
-            if not target_market and markets_map:
-                # Fallback : premier marché contenant home et away
-                for mid, mdata in markets_map.items():
-                    sub_keys = set()
-                    for oid, oc in (mdata.get("outcomes") or {}).items():
-                        for pid, pl in (oc.get("players") or {}).items():
-                            sub_keys.add(str(pl.get("bookmakerOutcomeId") or oid).lower())
-                    if "home" in sub_keys and "away" in sub_keys:
-                        target_market = mdata
-                        break
+        for spec in MARKET_SPECS:
+            mid_target = spec["id"]
+            slug = spec["slug"]
+            m_label = spec["name"]
+            books_for_market = []
 
-            if not target_market:
-                continue
+            for bk, bd in (fx.get("bookmakerOdds") or {}).items():
+                m_map = bd.get("markets") or {}
+                target_market = m_map.get(mid_target)
 
-            prices, limits, ages = {}, {}, []
-            for _oid, oc in (target_market.get("outcomes") or {}).items():
-                for _pid, pl in (oc.get("players") or {}).items():
-                    price = pl.get("price")
-                    if not price or float(price) <= 1.0:
-                        continue
-                    price = float(price)
-                    raw_key = str(pl.get("bookmakerOutcomeId") or _oid).lower()
-                    if raw_key in ("home", "1"):
-                        key = home
-                    elif raw_key in ("away", "2"):
-                        key = away
-                    elif raw_key in ("draw", "x"):
-                        key = "Draw"
-                    else:
-                        key = raw_key
+                # Fallback par mots-clés si non trouvé par ID strict
+                if not target_market:
+                    for mid_k, mdata in m_map.items():
+                        bm_id = str(mdata.get("bookmakerMarketId", "")).lower()
+                        if slug == "1x2" and ("moneyline" in bm_id or "1x2" in bm_id):
+                            target_market = mdata
+                            break
+                        elif slug == "tot_25" and "totals" in bm_id and "2.5" in bm_id:
+                            target_market = mdata
+                            break
 
-                    if key not in prices or price > prices[key]:
-                        prices[key] = price
-                        lim = pl.get("limit")
-                        if lim:
-                            limits[key] = lim
-                    if pl.get("changedAt"):
-                        try:
-                            t = datetime.datetime.fromisoformat(pl["changedAt"].replace("Z", "+00:00"))
-                            ages.append((now - t).total_seconds())
-                        except ValueError:
-                            pass
+                if not target_market:
+                    continue
 
-            if len(prices) < 2:
-                continue
+                prices, limits, ages = {}, {}, []
+                for _oid, oc in (target_market.get("outcomes") or {}).items():
+                    for _pid, pl in (oc.get("players") or {}).items():
+                        price = pl.get("price")
+                        if not price or float(price) <= 1.0:
+                            continue
+                        price = float(price)
+                        raw_key = str(pl.get("bookmakerOutcomeId") or _oid).lower()
+                        
+                        # Résolution explicite et propre du nom de la sélection
+                        if slug == "1x2":
+                            if raw_key in ("home", "1"):
+                                key = f"Victoire {home}" if participants else home
+                            elif raw_key in ("away", "2"):
+                                key = f"Victoire {away}" if participants else away
+                            elif raw_key in ("draw", "x"):
+                                key = "Draw"
+                            else:
+                                key = raw_key
+                        elif "tot_" in slug:
+                            val = spec.get("val", "2.5")
+                            if "over" in raw_key:
+                                key = f"+{val} Buts"
+                            elif "under" in raw_key:
+                                key = f"-{val} Buts"
+                            else:
+                                key = raw_key
+                        elif slug == "btts":
+                            if str(_oid) == "104" or "yes" in raw_key:
+                                key = "Les 2 marquent : Oui"
+                            elif str(_oid) == "105" or "no" in raw_key:
+                                key = "Les 2 marquent : Non"
+                            else:
+                                key = raw_key
+                        elif slug == "dnb":
+                            if str(_oid) == "10214" or raw_key in ("1", "home"):
+                                key = f"Remboursé si Nul : {home}"
+                            elif str(_oid) == "10215" or raw_key in ("2", "away"):
+                                key = f"Remboursé si Nul : {away}"
+                            else:
+                                key = raw_key
+                        else:
+                            key = raw_key
 
-            d = _devig(prices)
-            books.append({
-                "name": bk.capitalize() if bk.islower() else bk,
-                "prices": prices,
-                "limits": limits,
-                "updated_at": bd.get("changedAt") or fx.get("updatedAt"),
-                "age_s": min(ages) if ages else None,
-                "active": bd.get("bookmakerIsActive"),
-                **d
-            })
+                        if key not in prices or price > prices[key]:
+                            prices[key] = price
+                            lim = pl.get("limit")
+                            if lim:
+                                limits[key] = lim
+                        if pl.get("changedAt"):
+                            try:
+                                t = datetime.datetime.fromisoformat(pl["changedAt"].replace("Z", "+00:00"))
+                                ages.append((now - t).total_seconds())
+                            except ValueError:
+                                pass
 
-        if books:
-            out.append({
-                "source": "oddspapi",
-                "id": fx.get("fixtureId"),
-                "league": league,
-                "category": category,
-                "home": home,
-                "away": away,
-                "kickoff": fx.get("startTime"),
-                "books": books
-            })
+                # Validité du marché
+                if len(prices) >= 2:
+                    d = _devig(prices)
+                    books_for_market.append({
+                        "name": bk.capitalize() if bk.islower() else bk,
+                        "prices": prices,
+                        "limits": limits,
+                        "updated_at": bd.get("changedAt") or fx.get("updatedAt"),
+                        "age_s": min(ages) if ages else None,
+                        "active": bd.get("bookmakerIsActive"),
+                        **d
+                    })
+
+            if books_for_market:
+                out.append({
+                    "source": "oddspapi",
+                    "id": f"{fixture_id}_{slug}",
+                    "match_id": fixture_id,
+                    "market_type": m_label,
+                    "league": league,
+                    "category": category,
+                    "home": home,
+                    "away": away,
+                    "kickoff": start_time,
+                    "books": books_for_market
+                })
     return out
 
 
@@ -254,7 +295,7 @@ def pick_sharp(books):
 
 def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True):
     """
-    [events] -> lignes de tableau (selection, chance, cote, book, EV, limite, age, kelly).
+    [events] -> lignes de tableau (selection, chance, cote, book, EV, limite, age, kelly, market_type).
     """
     rows = []
     for ev in events:
@@ -291,6 +332,8 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
 
             rows.append({
                 "event_id": ev.get("id"),
+                "match_id": ev.get("match_id") or ev.get("id"),
+                "market_type": ev.get("market_type") or "1X2 (Résultat)",
                 "league": lg_info["name"],
                 "league_key": ev.get("league") or "general",
                 "country": lg_info["country"],

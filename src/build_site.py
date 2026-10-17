@@ -165,6 +165,9 @@ def collect():
 def build_combos(events):
     legs = []
     for ev in events:
+        # Seuls les résultats 1X2 sont combinés automatiquement pour éviter toute corrélation cachée
+        if ev.get("market_type") and "1X2" not in ev.get("market_type"):
+            continue
         books = ev.get("books", [])
         sharp = pick_sharp(books)
         if not sharp:
@@ -191,6 +194,8 @@ def build_combos(events):
     for n in range(2, min(MAX_LEGS, len(legs)) + 1):
         best = None
         for combo in itertools.combinations(legs, n):
+            if len({c["match"] for c in combo}) != n:
+                continue
             c_res = compound_combination(list(combo))
             if not c_res:
                 continue
@@ -423,6 +428,17 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     .badge-neg {{ background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }}
     .badge-warn {{ background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }}
     .badge-gray {{ background: var(--badge-bg); color: var(--text-muted); }}
+    .badge-market {{
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.35);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 4px;
+      display: inline-block;
+      letter-spacing: 0.3px;
+    }}
 
     /* Tables */
     .table-container {{
@@ -583,6 +599,13 @@ def generate_html(rows, combos, stats, source, demo, now_str):
   <!-- Filter & Search Bar -->
   <div class="filter-panel" id="filter-bar">
     <input type="text" class="search-input" id="search-box" placeholder="🔍 Rechercher une équipe, un match..." oninput="applyFilters()">
+    <select class="select-dropdown" id="market-filter" onchange="applyFilters()">
+      <option value="">Tous les types de paris</option>
+      <option value="1X2">🏆 Résultat du match (1X2)</option>
+      <option value="Buts">⚽ Nombre de Buts (Over/Under)</option>
+      <option value="marquent">🤝 Les 2 équipes marquent</option>
+      <option value="Remboursé">🛡️ Remboursé si Nul (DNB)</option>
+    </select>
     <select class="select-dropdown" id="league-filter" onchange="applyFilters()">
       <option value="">Toutes les compétitions</option>
     </select>
@@ -610,7 +633,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           <tr>
             <th>Compétition</th>
             <th>Match</th>
-            <th>Sélection</th>
+            <th>Type & Pronostic</th>
             <th class="right">Chance (Marché)</th>
             <th class="right">Meilleure Cote</th>
             <th>Bookmaker</th>
@@ -634,7 +657,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           <tr>
             <th>Compétition</th>
             <th>Match</th>
-            <th>Sélection</th>
+            <th>Type & Pronostic</th>
             <th class="right">Chance (Marché)</th>
             <th class="right">Cote Offerte</th>
             <th>Bookmaker</th>
@@ -789,6 +812,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
 
   function applyFilters() {{
     const query = document.getElementById('search-box').value.toLowerCase();
+    const market = document.getElementById('market-filter')?.value;
     const league = document.getElementById('league-filter').value;
     const oddsGroup = document.getElementById('odds-filter').value;
     const sortBy = document.getElementById('sort-selector').value;
@@ -796,7 +820,10 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     let items = [...(window.APP_DATA.selections || [])];
 
     if (query) {{
-      items = items.filter(r => (r.match + ' ' + r.sel).toLowerCase().includes(query));
+      items = items.filter(r => (r.match + ' ' + r.sel + ' ' + (r.market_type || '')).toLowerCase().includes(query));
+    }}
+    if (market) {{
+      items = items.filter(r => (r.market_type || '').includes(market));
     }}
     if (league) {{
       items = items.filter(r => r.league === league);
@@ -841,7 +868,10 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           </div>
         </td>
         <td style="font-weight: 600;">${{escapeHtml(r.match)}}</td>
-        <td><span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span></td>
+        <td>
+          ${{r.market_type ? `<div style="margin-bottom: 4px;"><span class="badge badge-market">${{escapeHtml(r.market_type)}}</span></div>` : ''}}
+          <span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+        </td>
         <td class="right">
           <div class="prob-bar-container" style="justify-content: flex-end;">
             <div class="prob-bar"><div class="prob-fill" style="width: ${{Math.round(r.prob * 100)}}%;"></div></div>
@@ -888,7 +918,10 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           </div>
         </td>
         <td style="font-weight: 600;">${{escapeHtml(r.match)}}</td>
-        <td><span style="color: var(--success); font-weight: 600;">${{escapeHtml(r.sel)}}</span></td>
+        <td>
+          ${{r.market_type ? `<div style="margin-bottom: 4px;"><span class="badge badge-market">${{escapeHtml(r.market_type)}}</span></div>` : ''}}
+          <span style="color: var(--success); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+        </td>
         <td class="right mono" style="font-weight: 700;">${{(r.prob * 100).toFixed(1)}}%</td>
         <td class="right mono" style="font-weight: 700; color: #fff;">${{r.price.toFixed(2)}}</td>
         <td>${{escapeHtml(r.book)}}</td>
