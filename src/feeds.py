@@ -24,8 +24,10 @@ import urllib.request
 
 try:
     from maths import devig_multiplicative, kelly_fraction, compute_ev
+    from leagues import resolve_league
 except ImportError:
     from src.maths import devig_multiplicative, kelly_fraction, compute_ev
+    from src.leagues import resolve_league
 
 # Auto-chargement du fichier .env sans dépendance externe
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -229,10 +231,15 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
 
             ev_val = compute_ev(p, best)
             k_quarter = kelly_fraction(p, best, fraction=0.25)
+            lg_info = resolve_league(ev.get("league"))
 
             rows.append({
                 "event_id": ev.get("id"),
-                "league": ev.get("league") or "Général",
+                "league": lg_info["name"],
+                "league_key": ev.get("league") or "general",
+                "country": lg_info["country"],
+                "flag": lg_info["flag"],
+                "badge_url": lg_info["badge_url"],
                 "kickoff": ev.get("kickoff"),
                 "match": f'{ev.get("home")} - {ev.get("away")}',
                 "sel": sel,

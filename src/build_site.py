@@ -224,6 +224,17 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     Produit une Single Page Application moderne, responsive et réactive.
     Styles CSS modernes intégrés, interactions JavaScript vanille sans dépendance.
     """
+    leagues_seen = {}
+    for r in rows:
+        lg_name = r.get("league")
+        if lg_name and lg_name not in leagues_seen:
+            leagues_seen[lg_name] = {
+                "name": lg_name,
+                "country": r.get("country", ""),
+                "flag": r.get("flag", "⚽"),
+                "badge_url": r.get("badge_url", "")
+            }
+
     app_data = {
         "generated_at": now_str,
         "source": source,
@@ -231,7 +242,7 @@ def generate_html(rows, combos, stats, source, demo, now_str):
         "stats": stats,
         "selections": rows,
         "combos": [{k: v for k, v in c.items() if k != "raw_legs"} for c in combos],
-        "leagues": sorted(list({r.get("league") for r in rows if r.get("league")}))
+        "leagues": list(leagues_seen.values())
     }
     json_embedded = json.dumps(app_data, ensure_ascii=False)
 
@@ -696,8 +707,8 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     const sel = document.getElementById('league-filter');
     (window.APP_DATA.leagues || []).forEach(lg => {{
       const opt = document.createElement('option');
-      opt.value = lg;
-      opt.textContent = lg;
+      opt.value = lg.name;
+      opt.textContent = `${{lg.flag || '⚽'}} ${{lg.name}} (${{lg.country}})`;
       sel.appendChild(opt);
     }});
   }}
@@ -761,7 +772,15 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       const inSlip = slipSelections.some(s => s.match === r.match && s.sel === r.sel);
       
       tr.innerHTML = `
-        <td><span class="badge badge-gray">${{escapeHtml(r.league)}}</span></td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${{r.badge_url ? `<img src="${{r.badge_url}}" width="20" height="15" style="border-radius: 3px; object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" onerror="this.style.display='none'">` : ''}}
+            <div>
+              <div style="font-weight: 600; color: #fff;">${{escapeHtml(r.league)}}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${{r.flag || '⚽'}} ${{escapeHtml(r.country || '')}}</div>
+            </div>
+          </div>
+        </td>
         <td style="font-weight: 600;">${{escapeHtml(r.match)}}</td>
         <td><span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span></td>
         <td class="right">
@@ -800,7 +819,15 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       const tr = document.createElement('tr');
       const inSlip = slipSelections.some(s => s.match === r.match && s.sel === r.sel);
       tr.innerHTML = `
-        <td><span class="badge badge-gray">${{escapeHtml(r.league)}}</span></td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${{r.badge_url ? `<img src="${{r.badge_url}}" width="20" height="15" style="border-radius: 3px; object-fit: cover; box-shadow: 0 1px 3px rgba(0,0,0,0.5);" onerror="this.style.display='none'">` : ''}}
+            <div>
+              <div style="font-weight: 600; color: #fff;">${{escapeHtml(r.league)}}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${{r.flag || '⚽'}} ${{escapeHtml(r.country || '')}}</div>
+            </div>
+          </div>
+        </td>
         <td style="font-weight: 600;">${{escapeHtml(r.match)}}</td>
         <td><span style="color: var(--success); font-weight: 600;">${{escapeHtml(r.sel)}}</span></td>
         <td class="right mono" style="font-weight: 700;">${{(r.prob * 100).toFixed(1)}}%</td>
