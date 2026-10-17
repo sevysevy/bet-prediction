@@ -6,4 +6,5 @@ __pycache__/
 *.py[cod]
 .cache/
 data/
+scratch/
 .DS_Store

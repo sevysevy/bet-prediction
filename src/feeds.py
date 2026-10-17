@@ -49,9 +49,11 @@ if os.path.exists(_env_path):
 
 # ------------------------------------------------------------------ clés
 KEYS = {
-    "theoddsapi": os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY"),
-    "oddspapi":   os.environ.get("ODDSPAPI_KEY"),
-    "pinnapi":    os.environ.get("PINNAPI_KEY"),
+    "theoddsapi":        os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY"),
+    "oddspapi":          os.environ.get("ODDSPAPI_KEY"),
+    "pinnapi":           os.environ.get("PINNAPI_KEY"),
+    "sports_games_odds": os.environ.get("SPORTS_GAMES_ODDS") or os.environ.get("SPORTSGAMEODDS_KEY"),
+    "sports_data":       os.environ.get("SPORTS_DATA") or os.environ.get("SPORTSDATA_KEY"),
 }
 
 SHARP_HINTS = ("pinnacle", "circa", "betfair", "matchbook", "sbobet", "ibc",
@@ -286,17 +288,162 @@ def norm_pinnapi(payload: list) -> list:
     return out
 
 
+def american_to_decimal(a) -> float | None:
+    """Convertit une cote américaine (+150, -200) en cote décimale (2.50, 1.50)."""
+    try:
+        val = float(a)
+        if val > 0:
+            return round(1.0 + (val / 100.0), 3)
+        elif val < 0:
+            return round(1.0 + (100.0 / abs(val)), 3)
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def norm_sportsgameodds(payload: list) -> list:
+    """
+    Payload SportsGameOdds (/v2/events) -> schéma commun multi-bookmakers.
+    Prend en charge :
+    - Football 1X2 (3-way moneyline avec Draw)
+    - Basketball / Football US / Baseball (2-way moneyline)
+    - Multi-bookmakers (DraftKings, FanDuel, BetMGM, Caesars, Unibet, William Hill...)
+    """
+    out = []
+    for ev in payload or []:
+        teams = ev.get("teams") or {}
+        h_info = teams.get("home") or {}
+        a_info = teams.get("away") or {}
+        home = h_info.get("names", {}).get("display") or h_info.get("names", {}).get("medium") or h_info.get("teamID")
+        away = a_info.get("names", {}).get("display") or a_info.get("names", {}).get("medium") or a_info.get("teamID")
+        if not (home and away):
+            continue
+
+        st = ev.get("status") or {}
+        starts_at = st.get("startsAt")
+        odds = ev.get("odds") or {}
+        league = ev.get("leagueID") or "sportsgameodds"
+
+        # 1. Marché 1X2 (Soccer 3-Way)
+        h_3w = odds.get("points-home-reg-ml3way-home") or odds.get("points-home-game-ml3way-home")
+        d_3w = odds.get("points-all-reg-ml3way-draw") or odds.get("points-all-game-ml3way-draw")
+        a_3w = odds.get("points-away-reg-ml3way-away") or odds.get("points-away-game-ml3way-away")
+
+        if h_3w and d_3w and a_3w:
+            bks = set(h_3w.get("byBookmaker", {}).keys()) | set(d_3w.get("byBookmaker", {}).keys()) | set(a_3w.get("byBookmaker", {}).keys())
+            books = []
+            for bk in bks:
+                hp = american_to_decimal(h_3w.get("byBookmaker", {}).get(bk, {}).get("odds"))
+                dp = american_to_decimal(d_3w.get("byBookmaker", {}).get(bk, {}).get("odds"))
+                ap = american_to_decimal(a_3w.get("byBookmaker", {}).get(bk, {}).get("odds"))
+                if hp and dp and ap and hp > 1.01 and dp > 1.01 and ap > 1.01:
+                    prices = {f"Victoire {home}": hp, "Draw": dp, f"Victoire {away}": ap}
+                    d = _devig(prices)
+                    books.append({
+                        "name": bk.capitalize(),
+                        "prices": prices,
+                        "limit": None,
+                        "updated_at": starts_at,
+                        "age_s": None,
+                        **d
+                    })
+            if books:
+                out.append({
+                    "source": "sportsgameodds",
+                    "id": f"sgo_{ev.get('eventID')}_1x2",
+                    "match_id": ev.get("eventID"),
+                    "market_type": "1X2 (Résultat)",
+                    "league": league,
+                    "home": home,
+                    "away": away,
+                    "kickoff": starts_at,
+                    "books": books
+                })
+
+        # 2. Marché 2-Way Moneyline (NBA, NFL, MLB...)
+        h_2w = odds.get("points-home-game-ml-home")
+        a_2w = odds.get("points-away-game-ml-away")
+        if (not (h_3w and d_3w and a_3w)) and h_2w and a_2w:
+            bks = set(h_2w.get("byBookmaker", {}).keys()) | set(a_2w.get("byBookmaker", {}).keys())
+            books = []
+            for bk in bks:
+                hp = american_to_decimal(h_2w.get("byBookmaker", {}).get(bk, {}).get("odds"))
+                ap = american_to_decimal(a_2w.get("byBookmaker", {}).get(bk, {}).get("odds"))
+                if hp and ap and hp > 1.01 and ap > 1.01:
+                    prices = {f"Victoire {home}": hp, f"Victoire {away}": ap}
+                    d = _devig(prices)
+                    books.append({
+                        "name": bk.capitalize(),
+                        "prices": prices,
+                        "limit": None,
+                        "updated_at": starts_at,
+                        "age_s": None,
+                        **d
+                    })
+            if books:
+                out.append({
+                    "source": "sportsgameodds",
+                    "id": f"sgo_{ev.get('eventID')}_ml",
+                    "match_id": ev.get("eventID"),
+                    "market_type": "Moneyline (Vainqueur)",
+                    "league": league,
+                    "home": home,
+                    "away": away,
+                    "kickoff": starts_at,
+                    "books": books
+                })
+    return out
+
+
+def collect_sportsgameodds(api_key: str, leagues: list | None = None) -> list:
+    """Collecte les événements avec cotes disponibles depuis SportsGameOdds."""
+    api_key = (api_key or "").strip().strip('"').strip("'")
+    if not api_key:
+        return []
+    target_leagues = leagues or ["UEFA_CHAMPIONS_LEAGUE", "MLS", "NBA", "NFL", "MLB"]
+    raw_events = []
+    for lid in target_leagues:
+        try:
+            data, _ = get("https://api.sportsgameodds.com/v2/events",
+                          {"apiKey": api_key, "leagueID": lid, "oddsAvailable": "true", "limit": 10},
+                          cache_ttl_s=600)
+            if isinstance(data, dict) and data.get("data"):
+                raw_events.extend(data["data"])
+        except Exception as exc:
+            print(f"  [!] sportsgameodds {lid} : {exc}", file=sys.stderr)
+    return norm_sportsgameodds(raw_events)
+
+
 # ------------------------------------------------------------------ schéma commun -> référence
 def norm_team_key(s: str) -> str:
     """Normalise un nom d'équipe pour le rapprochement multi-sources et historique."""
+    import unicodedata
     s = str(s or "").lower().strip()
+    s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('utf-8')
     s = re.sub(r'\bst\b', 'saint', s)
     s = re.sub(r'\butd\b', 'united', s)
     s = re.sub(r'\bman\b', 'manchester', s)
     s = re.sub(r'\bsg\b', 'saint germain', s)
-    s = re.sub(r'\b(fc|cf|osc|rc|as|ac|ss|rb|fsv|sc|us|ogc|vfl|bvb|afc)\b', '', s)
+    s = re.sub(r'\binternazionale\b', 'inter', s)
+    s = re.sub(r'\binter milan\b', 'inter', s)
+    s = re.sub(r'\binter milano\b', 'inter', s)
+    s = re.sub(r'\bparis saint[- ]germain\b', 'parissaintgermain', s)
+    s = re.sub(r'\batletico( de)? madrid\b', 'atleticomadrid', s)
+    s = re.sub(r'\bmunchen\b', 'munich', s)
+    s = re.sub(r'\b(fc|cf|osc|rc|as|ac|ss|rb|fsv|sc|us|ogc|vfl|bvb|afc|1)\b', '', s)
     s = re.sub(r'[^a-z0-9]', '', s)
     return s
+
+
+def teams_match(t1: str, t2: str) -> bool:
+    """Rapprochement tolérant entre noms d'équipes de flux différents."""
+    k1 = norm_team_key(t1)
+    k2 = norm_team_key(t2)
+    if k1 == k2:
+        return True
+    if len(k1) >= 4 and len(k2) >= 4 and (k1 in k2 or k2 in k1):
+        return True
+    return False
 
 
 def pick_sharp(books, max_sharp_margin: float = 0.08):
@@ -391,13 +538,14 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
 
 
 # ------------------------------------------------------------------ transport avec cache
-def get(url, params, timeout=20, cache_ttl_s: int = 600):
+def get(url, params: dict | None = None, timeout=20, cache_ttl_s: int = 600):
     """
     Requête HTTP GET avec cache local (TTL 10 min par défaut).
     Évite de brûler les quotas d'API limités (ex: 250 req/mois pour OddsPapi).
     """
-    query_str = urllib.parse.urlencode(sorted(params.items()))
-    full_url = f"{url}?{query_str}"
+    params_dict = params or {}
+    query_str = urllib.parse.urlencode(sorted(params_dict.items()))
+    full_url = f"{url}?{query_str}" if query_str else url
     
     # Hash de l'URL pour le fichier cache
     url_hash = hashlib.sha256(full_url.encode("utf-8")).hexdigest()[:16]
