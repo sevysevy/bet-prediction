@@ -1556,11 +1556,26 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
         </div>
         <div class="calc-row" style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #334155;">
           <span>Votre Bankroll (XAF) :</span>
-          <input type="number" class="stake-input" id="user-bankroll" value="50000" step="1000" oninput="updateSlipCalcs()">
+          <input type="number" class="stake-input" id="user-bankroll" value="10000" step="1000" min="500" oninput="updateSlipCalcs()" style="width: 100px;">
+        </div>
+        <div class="calc-row" style="align-items: center;">
+          <span style="color: var(--text-muted);">Gestion du Risque :</span>
+          <select id="user-kelly-mode" class="stake-input" style="width: auto; padding: 4px 8px; font-size: 11.5px; cursor: pointer; color: #fff; background: #090d16;" onchange="updateSlipCalcs()">
+            <option value="0.25">🛡️ 1/4 Kelly (Ultra-Prudent)</option>
+            <option value="0.50" selected>⚖️ 1/2 Kelly (Équilibré Pro)</option>
+            <option value="0.75">⚡ 3/4 Kelly (Dynamique)</option>
+            <option value="1.00">🚀 Full Kelly (Agressif)</option>
+            <option value="flat-2.5">🎯 Flat 2.5% fixe</option>
+            <option value="flat-5.0">🎯 Flat 5% fixe</option>
+          </select>
         </div>
         <div class="calc-row">
-          <span>Mise conseillée (Kelly) :</span>
-          <b class="mono" style="color: var(--success);" id="slip-kelly-stake">0 XAF</b>
+          <span>Mise conseillée :</span>
+          <b class="mono" style="color: var(--success); font-size: 13.5px;" id="slip-kelly-stake">0 XAF</b>
+        </div>
+        <div class="calc-row" id="slip-payout-row" style="display: none; color: #94a3b8; font-size: 12px; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.06);">
+          <span>Gain net estimé :</span>
+          <b class="mono" style="color: #38bdf8;" id="slip-potential-payout">+0 XAF</b>
         </div>
       </div>
     </div>
@@ -2266,16 +2281,54 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     evEl.textContent = (ev >= 0 ? '+' : '') + (ev * 100).toFixed(1) + '%';
     evEl.style.color = ev >= 0 ? 'var(--success)' : (ev > -0.1 ? 'var(--warning)' : 'var(--danger)');
 
-    // Kelly
-    const bankroll = parseFloat(document.getElementById('user-bankroll').value) || 0;
+    // Bankroll & Profil de Risque
+    const bankrollInput = document.getElementById('user-bankroll');
+    const bankroll = parseFloat(bankrollInput ? bankrollInput.value : 10000) || 0;
+    try {{
+      localStorage.setItem('betslip_bankroll', bankroll);
+    }} catch (e) {{}}
+
+    const modeSelect = document.getElementById('user-kelly-mode');
+    const mode = modeSelect ? modeSelect.value : '0.50';
+    try {{
+      localStorage.setItem('betslip_kelly_mode', mode);
+    }} catch (e) {{}}
+
     let stake = 0;
-    if (ev > 0 && odds > 1.0) {{
-      const b = odds - 1.0;
-      const q = 1.0 - prob;
-      const fStar = (prob * b - q) / b;
-      stake = Math.max(0, Math.min(bankroll * fStar * 0.25, bankroll * 0.05));
+    if (mode.startsWith('flat-')) {{
+      const pct = parseFloat(mode.replace('flat-', '')) / 100.0;
+      if (ev > -0.05) {{
+        stake = Math.round(bankroll * pct);
+      }}
+    }} else {{
+      const fraction = parseFloat(mode) || 0.50;
+      if (ev > 0 && odds > 1.0) {{
+        const b = odds - 1.0;
+        const q = 1.0 - prob;
+        const fStar = (prob * b - q) / b;
+        const maxCap = fraction >= 1.0 ? 0.20 : (fraction >= 0.75 ? 0.15 : (fraction >= 0.50 ? 0.10 : 0.05));
+        stake = Math.round(Math.max(0, Math.min(bankroll * fStar * fraction, bankroll * maxCap)));
+      }}
     }}
-    document.getElementById('slip-kelly-stake').textContent = stake > 0 ? Math.round(stake).toLocaleString('fr-FR') + ' XAF' : '0 XAF (EV négative)';
+
+    const stakeEl = document.getElementById('slip-kelly-stake');
+    const payoutRow = document.getElementById('slip-payout-row');
+    const payoutEl = document.getElementById('slip-potential-payout');
+
+    if (stake > 0) {{
+      const stakePct = bankroll > 0 ? ((stake / bankroll) * 100).toFixed(1) : '0';
+      stakeEl.textContent = `${{stake.toLocaleString('fr-FR')}} XAF (${{stakePct}}%)`;
+      
+      const totalWin = Math.round(stake * odds);
+      const netProfit = totalWin - stake;
+      if (payoutEl && payoutRow) {{
+        payoutEl.textContent = `+${{netProfit.toLocaleString('fr-FR')}} XAF (Total: ${{totalWin.toLocaleString('fr-FR')}} XAF)`;
+        payoutRow.style.display = 'flex';
+      }}
+    }} else {{
+      stakeEl.textContent = '0 XAF (EV négative)';
+      if (payoutRow) payoutRow.style.display = 'none';
+    }}
   }}
 
   // --- Draggable Bet Slip Functionality ---
@@ -2290,6 +2343,20 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     const drawer = document.getElementById('bet-slip');
     const header = document.getElementById('slip-header');
     if (!drawer || !header) return;
+
+    // Restaurer bankroll et mode de risque
+    try {{
+      const savedBankroll = localStorage.getItem('betslip_bankroll');
+      if (savedBankroll) {{
+        const bEl = document.getElementById('user-bankroll');
+        if (bEl) bEl.value = savedBankroll;
+      }}
+      const savedMode = localStorage.getItem('betslip_kelly_mode');
+      if (savedMode) {{
+        const mEl = document.getElementById('user-kelly-mode');
+        if (mEl) mEl.value = savedMode;
+      }}
+    }} catch (e) {{}}
 
     // Restaurer la position sauvegardée si présente
     try {{
