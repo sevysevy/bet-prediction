@@ -20,6 +20,7 @@ import html
 import itertools
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -43,15 +44,15 @@ ODDSPAPI_SLUGS = {
 }
 
 THEODDS_KEYS = [
-    "soccer_epl", "soccer_efl_champ", "soccer_england_league1", "soccer_england_league2",
-    "soccer_france_ligue_one", "soccer_france_ligue_two", "soccer_germany_bundesliga",
-    "soccer_germany_bundesliga2", "soccer_spain_la_liga", "soccer_spain_segunda_division",
-    "soccer_italy_serie_a", "soccer_italy_serie_b", "soccer_netherlands_eredivisie",
-    "soccer_portugal_primeira_liga", "soccer_belgium_first_div", "soccer_turkey_super_league",
-    "soccer_greece_super_league", "soccer_austria_bundesliga", "soccer_switzerland_superleague",
-    "soccer_denmark_superliga", "soccer_norway_eliteserien", "soccer_sweden_allsvenskan",
-    "soccer_sweden_superettan", "soccer_finland_veikkausliiga", "soccer_poland_ekstraklasa",
-    "soccer_spl", "soccer_league_of_ireland",
+    "soccer_epl", "soccer_france_ligue_one", "soccer_germany_bundesliga", "soccer_spain_la_liga",
+    "soccer_italy_serie_a", "soccer_efl_champ", "soccer_netherlands_eredivisie",
+    "soccer_portugal_primeira_liga", "soccer_spain_segunda_division", "soccer_germany_bundesliga2",
+    "soccer_france_ligue_two", "soccer_italy_serie_b", "soccer_belgium_first_div",
+    "soccer_turkey_super_league", "soccer_greece_super_league", "soccer_austria_bundesliga",
+    "soccer_switzerland_superleague", "soccer_denmark_superliga", "soccer_norway_eliteserien",
+    "soccer_sweden_allsvenskan", "soccer_sweden_superettan", "soccer_finland_veikkausliiga",
+    "soccer_poland_ekstraklasa", "soccer_spl", "soccer_league_of_ireland",
+    "soccer_england_league1", "soccer_england_league2"
 ]
 
 
@@ -125,40 +126,89 @@ def collect_oddspapi(key):
     return events, f"oddspapi · {len(all_odds)} matches Pinnacle"
 
 
-def collect_theodds(api_key):
+def collect_theodds(api_key, max_leagues: int = 10):
     api_key = (api_key or "").strip().strip('"').strip("'")
     events, ok = [], []
-    for s in THEODDS_KEYS:
+    for s in THEODDS_KEYS[:max_leagues]:
         try:
             data, _ = get(f"https://api.the-odds-api.com/v4/sports/{s}/odds",
                           {"apiKey": api_key, "regions": "eu,uk", "markets": "h2h",
                            "oddsFormat": "decimal"})
-            events += data
-            ok.append(s)
+            if data:
+                events += data
+                ok.append(s)
         except Exception as exc:
             print(f"  [!] {s} : {exc}", file=sys.stderr)
-    return norm_theodds(events), f"the-odds-api · {len(ok)} ligues"
+    return norm_theodds(events), f"The Odds API ({len(ok)} ligues grand public)"
+
+
+def norm_team_key(s: str) -> str:
+    s = str(s or "").lower().strip()
+    s = re.sub(r'\bst\b', 'saint', s)
+    s = re.sub(r'\butd\b', 'united', s)
+    s = re.sub(r'\bman\b', 'manchester', s)
+    s = re.sub(r'\bsg\b', 'saint germain', s)
+    s = re.sub(r'\b(fc|cf|osc|rc|as|ac|ss|rb|fsv|sc|us|ogc|vfl|bvb|afc)\b', '', s)
+    s = re.sub(r'[^a-z0-9]', '', s)
+    return s
+
+
+def merge_feeds(oddspapi_events, theodds_events):
+    """
+    Fusionne les flux TheOddsAPI (bookmakers grand public) et OddsPapi (Pinnacle sharp + multi-marchés).
+    Pour les matches 1X2 couverts par TheOddsAPI, privilégie TheOddsAPI qui contient l'ensemble
+    des cotes des bookmakers grand public (Winamax, Betclic, Unibet, 1xBet...) face à Pinnacle.
+    Conserve tous les marchés secondaires (Buts, BTTS, DNB) et les matches exclusifs d'OddsPapi.
+    """
+    to_matches = set()
+    for ev in theodds_events:
+        h = norm_team_key(ev.get("home"))
+        a = norm_team_key(ev.get("away"))
+        if h and a:
+            to_matches.add((h, a))
+            to_matches.add((a, h))
+
+    combined = list(theodds_events)
+    for ev in oddspapi_events:
+        h = norm_team_key(ev.get("home"))
+        a = norm_team_key(ev.get("away"))
+        # Si le 1X2 est déjà présent dans TheOddsAPI, on évite le doublon pour garder la version multi-bookmakers
+        if ev.get("market_type") == "1X2 (Résultat)" and ((h, a) in to_matches or (a, h) in to_matches):
+            continue
+        combined.append(ev)
+
+    return combined
 
 
 def collect():
     oddspapi_key = (os.environ.get("ODDSPAPI_KEY") or "").strip().strip('"').strip("'")
     theodds_key = (os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY") or "").strip().strip('"').strip("'")
 
-    if oddspapi_key:
-        try:
-            ev, info = collect_oddspapi(oddspapi_key)
-            if ev:
-                return ev, info
-        except Exception as exc:
-            print(f"  [!] oddspapi : {exc}", file=sys.stderr)
+    oddspapi_events, op_info = [], None
+    theodds_events, to_info = [], None
+
     if theodds_key:
         try:
-            ev, info = collect_theodds(theodds_key)
-            if ev:
-                return ev, info
+            theodds_events, to_info = collect_theodds(theodds_key, max_leagues=10)
         except Exception as exc:
             print(f"  [!] theoddsapi : {exc}", file=sys.stderr)
-    raise RuntimeError("aucune source disponible (vérifiez que vos clés d'API sont valides)")
+
+    if oddspapi_key:
+        try:
+            oddspapi_events, op_info = collect_oddspapi(oddspapi_key)
+        except Exception as exc:
+            print(f"  [!] oddspapi : {exc}", file=sys.stderr)
+
+    if not theodds_events and not oddspapi_events:
+        raise RuntimeError("aucune source disponible (vérifiez que vos clés d'API sont valides)")
+
+    if theodds_events and oddspapi_events:
+        combined = merge_feeds(oddspapi_events, theodds_events)
+        return combined, f"Couplé · Pinnacle Sharp (OddsPapi) + Grand Public (TheOddsAPI)"
+    elif theodds_events:
+        return theodds_events, to_info or "the-odds-api"
+    else:
+        return oddspapi_events, op_info or "oddspapi"
 
 
 # ------------------------------------------------------------------ combinés

@@ -108,6 +108,8 @@ def norm_theodds(payload: list) -> list:
                               "age_s": None, **d})
         if books:
             out.append({"source": "theoddsapi", "id": ev.get("id"),
+                        "match_id": ev.get("id"),
+                        "market_type": "1X2 (Résultat)",
                         "league": ev.get("sport_key"),
                         "home": ev.get("home_team"), "away": ev.get("away_team"),
                         "kickoff": ev.get("commence_time"), "books": books})
