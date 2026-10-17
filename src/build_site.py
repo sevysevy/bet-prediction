@@ -57,17 +57,72 @@ THEODDS_KEYS = [
 
 # ------------------------------------------------------------------ collecte
 def collect_oddspapi(key):
+    import time
     key = (key or "").strip().strip('"').strip("'")
-    data, _ = get("https://api.oddspapi.io/v4/tournaments", {"sportId": 10, "apiKey": key})
-    ids = [str(t["tournamentId"]) for t in data if t.get("tournamentSlug") in ODDSPAPI_SLUGS]
-    if not ids:
-        # Fallback si aucun slug ne matche exactement
-        ids = [str(t["tournamentId"]) for t in (data[:20] if isinstance(data, list) else [])]
+    
+    # 1. Récupération des tournois (mise en cache 24h pour préserver le quota)
+    tournaments, _ = get("https://api.oddspapi.io/v4/tournaments",
+                         {"sportId": 10, "apiKey": key}, cache_ttl_s=86400)
+    tournaments_map = {str(t["tournamentId"]): t for t in tournaments} if isinstance(tournaments, list) else {}
+
+    # 2. Récupération du dictionnaire des équipes (mise en cache 24h)
+    try:
+        participants, _ = get("https://api.oddspapi.io/v4/participants",
+                              {"sportId": 10, "apiKey": key}, cache_ttl_s=86400)
+    except Exception as exc:
+        print(f"  [!] oddspapi participants : {exc}", file=sys.stderr)
+        participants = {}
+    if not isinstance(participants, dict):
+        participants = {}
+
+    # 3. Filtrage des tournois cibles (priorité aux championnats majeurs européens)
+    major_cats = {
+        "england", "spain", "germany", "italy", "france", "europe",
+        "international", "netherlands", "portugal", "belgium", "turkey", "scotland"
+    }
+    top_tier_ids = {"17", "8", "23", "35", "34", "37", "20", "18", "40", "53", "54", "182"}
+    target_tournaments = []
+    if isinstance(tournaments, list):
+        for t in tournaments:
+            slug = t.get("tournamentSlug")
+            cat = str(t.get("categorySlug") or "").lower()
+            if slug in ODDSPAPI_SLUGS and cat in major_cats:
+                target_tournaments.append(t)
+        # Tri : championnats de première division d'abord, puis par volume de matches
+        target_tournaments.sort(key=lambda t: (
+            0 if str(t.get("tournamentId")) in top_tier_ids else 1,
+            -t.get("futureFixtures", 0)
+        ))
+
+    ids = [str(t["tournamentId"]) for t in target_tournaments]
+    if not ids and isinstance(tournaments, list):
+        ids = [str(t["tournamentId"]) for t in tournaments[:15]]
+
     if not ids:
         raise RuntimeError("aucun tournoi disponible dans la réponse /tournaments")
-    payload, _ = get("https://api.oddspapi.io/v4/odds-by-tournaments",
-                     {"bookmaker": "pinnacle", "tournamentIds": ",".join(ids[:20]), "oddsFormat": "decimal", "apiKey": key})
-    return norm_oddspapi(payload), f"oddspapi · {len(ids)} tournois"
+
+    # ATTENTION API ODDSPAPI : Maximum 5 tournamentIds par requête
+    # Découpage en lots de 5 avec temporisation respectant le rate limit de 1000ms
+    CHUNK_SIZE = 5
+    MAX_CHUNKS = 4  # Jusqu'à 20 championnats cibles
+    all_odds = []
+
+    for i in range(0, min(len(ids), CHUNK_SIZE * MAX_CHUNKS), CHUNK_SIZE):
+        chunk = ids[i:i + CHUNK_SIZE]
+        if not chunk:
+            continue
+        if i > 0:
+            time.sleep(1.2)  # Cooldown rate limit obligatoire (1000ms)
+        try:
+            payload, _ = get("https://api.oddspapi.io/v4/odds-by-tournaments",
+                             {"bookmaker": "pinnacle", "tournamentIds": ",".join(chunk), "apiKey": key})
+            if isinstance(payload, list):
+                all_odds.extend(payload)
+        except Exception as exc:
+            print(f"  [!] oddspapi lot {chunk} : {exc}", file=sys.stderr)
+
+    events = norm_oddspapi(all_odds, participants=participants, tournaments=tournaments_map)
+    return events, f"oddspapi · {len(all_odds)} matches Pinnacle"
 
 
 def collect_theodds(api_key):
@@ -91,12 +146,16 @@ def collect():
 
     if oddspapi_key:
         try:
-            return collect_oddspapi(oddspapi_key)
+            ev, info = collect_oddspapi(oddspapi_key)
+            if ev:
+                return ev, info
         except Exception as exc:
             print(f"  [!] oddspapi : {exc}", file=sys.stderr)
     if theodds_key:
         try:
-            return collect_theodds(theodds_key)
+            ev, info = collect_theodds(theodds_key)
+            if ev:
+                return ev, info
         except Exception as exc:
             print(f"  [!] theoddsapi : {exc}", file=sys.stderr)
     raise RuntimeError("aucune source disponible (vérifiez que vos clés d'API sont valides)")

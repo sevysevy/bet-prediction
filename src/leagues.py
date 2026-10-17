@@ -426,19 +426,148 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "flag": "🇪🇺",
         "iso": "eu",
         "category": "Coupes"
-    }
+    },
+    # OddsPapi numeric tournament IDs (top European & world leagues)
+    "17": {
+        "name": "Premier League",
+        "country": "Angleterre",
+        "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+        "iso": "gb-eng",
+        "category": "Europe"
+    },
+    "8": {
+        "name": "LaLiga",
+        "country": "Espagne",
+        "flag": "🇪🇸",
+        "iso": "es",
+        "category": "Europe"
+    },
+    "23": {
+        "name": "Serie A",
+        "country": "Italie",
+        "flag": "🇮🇹",
+        "iso": "it",
+        "category": "Europe"
+    },
+    "35": {
+        "name": "Bundesliga",
+        "country": "Allemagne",
+        "flag": "🇩🇪",
+        "iso": "de",
+        "category": "Europe"
+    },
+    "34": {
+        "name": "Ligue 1",
+        "country": "France",
+        "flag": "🇫🇷",
+        "iso": "fr",
+        "category": "Europe"
+    },
+    "18": {
+        "name": "Championship",
+        "country": "Angleterre",
+        "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+        "iso": "gb-eng",
+        "category": "Europe"
+    },
+    "40": {
+        "name": "Bundesliga 2",
+        "country": "Allemagne",
+        "flag": "🇩🇪",
+        "iso": "de",
+        "category": "Europe"
+    },
+    "53": {
+        "name": "Serie B",
+        "country": "Italie",
+        "flag": "🇮🇹",
+        "iso": "it",
+        "category": "Europe"
+    },
+    "54": {
+        "name": "LaLiga 2",
+        "country": "Espagne",
+        "flag": "🇪🇸",
+        "iso": "es",
+        "category": "Europe"
+    },
+    "182": {
+        "name": "Ligue 2",
+        "country": "France",
+        "flag": "🇫🇷",
+        "iso": "fr",
+        "category": "Europe"
+    },
+    "37": {
+        "name": "Eredivisie",
+        "country": "Pays-Bas",
+        "flag": "🇳🇱",
+        "iso": "nl",
+        "category": "Europe"
+    },
+    "20": {
+        "name": "Primeira Liga",
+        "country": "Portugal",
+        "flag": "🇵🇹",
+        "iso": "pt",
+        "category": "Europe"
+    },
+    "52": {
+        "name": "Super League",
+        "country": "Turquie",
+        "flag": "🇹🇷",
+        "iso": "tr",
+        "category": "Europe"
+    },
+    "41": {
+        "name": "Jupiler Pro League",
+        "country": "Belgique",
+        "flag": "🇧🇪",
+        "iso": "be",
+        "category": "Europe"
+    },
+}
+
+COUNTRY_MAP: Dict[str, tuple[str, str, str]] = {
+    "england": ("Angleterre", "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "gb-eng"),
+    "spain": ("Espagne", "🇪🇸", "es"),
+    "germany": ("Allemagne", "🇩🇪", "de"),
+    "italy": ("Italie", "🇮🇹", "it"),
+    "france": ("France", "🇫🇷", "fr"),
+    "netherlands": ("Pays-Bas", "🇳🇱", "nl"),
+    "portugal": ("Portugal", "🇵🇹", "pt"),
+    "belgium": ("Belgique", "🇧🇪", "be"),
+    "turkey": ("Turquie", "🇹🇷", "tr"),
+    "greece": ("Grèce", "🇬🇷", "gr"),
+    "austria": ("Autriche", "🇦🇹", "at"),
+    "switzerland": ("Suisse", "🇨🇭", "ch"),
+    "denmark": ("Danemark", "🇩🇰", "dk"),
+    "norway": ("Norvège", "🇳🇴", "no"),
+    "sweden": ("Suède", "🇸🇪", "se"),
+    "finland": ("Finlande", "🇫🇮", "fi"),
+    "poland": ("Pologne", "🇵🇱", "pl"),
+    "scotland": ("Écosse", "🏴󠁧󠁢󠁳󠁣󠁴󠁿", "gb-sct"),
+    "ireland": ("Irlande", "🇮🇪", "ie"),
+    "brazil": ("Brésil", "🇧🇷", "br"),
+    "argentina": ("Argentine", "🇦🇷", "ar"),
+    "usa": ("États-Unis", "🇺🇸", "us"),
+    "mexico": ("Mexique", "🇲🇽", "mx"),
+    "japan": ("Japon", "🇯🇵", "jp"),
+    "saudi-arabia": ("Arabie Saoudite", "🇸🇦", "sa"),
+    "europe": ("Europe", "🇪🇺", "eu"),
+    "international": ("International", "🌍", "un"),
 }
 
 
-def resolve_league(raw_key: str | None) -> Dict[str, str]:
+def resolve_league(raw_key: str | None, fallback_country: str | None = None, fallback_name: str | None = None) -> Dict[str, str]:
     """
     Résout les métadonnées de la compétition à partir de n'importe quel slug ou clé brute.
     Renvoie toujours un dictionnaire avec {name, country, flag, iso, badge_url}.
     """
     if not raw_key:
         return {
-            "name": "Général",
-            "country": "Monde",
+            "name": fallback_name or "Général",
+            "country": fallback_country or "Monde",
             "flag": "🌍",
             "iso": "un",
             "badge_url": "https://flagcdn.com/24x18/un.png"
@@ -461,13 +590,24 @@ def resolve_league(raw_key: str | None) -> Dict[str, str]:
         if match_found:
             info = match_found
         else:
-            # Fallback lisible
-            clean_name = str(raw_key).replace("soccer_", "").replace("_", " ").title()
+            # Fallback lisible avec enrichissement pays
+            clean_name = fallback_name or str(raw_key).replace("soccer_", "").replace("_", " ").title()
+            country_name = "International"
+            flag = "⚽"
+            iso_code = "un"
+            
+            if fallback_country:
+                cat_key = str(fallback_country).lower().strip().replace(" ", "-")
+                if cat_key in COUNTRY_MAP:
+                    country_name, flag, iso_code = COUNTRY_MAP[cat_key]
+                else:
+                    country_name = fallback_country.title()
+
             info = {
                 "name": clean_name,
-                "country": "International",
-                "flag": "⚽",
-                "iso": "un",
+                "country": country_name,
+                "flag": flag,
+                "iso": iso_code,
                 "category": "Autre"
             }
 

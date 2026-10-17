@@ -114,51 +114,107 @@ def norm_theodds(payload: list) -> list:
     return out
 
 
-def norm_oddspapi(payload: list, participants=None, markets=None) -> list:
-    """Payload OddsPapi (/v4/odds-by-tournaments) -> schéma commun."""
+def norm_oddspapi(payload: list, participants: dict | None = None, tournaments: dict | None = None, markets: dict | None = None) -> list:
+    """
+    Payload OddsPapi (/v4/odds-by-tournaments) -> schéma commun.
+    Extrait prioritairement le marché 1X2 Moneyline (ID '101') pour des probabilités
+    dévigorées pures et sans interférences avec les marchés dérivés (totals, spreads).
+    Résout les noms réels d'équipes et de compétitions via les dictionnaires fournis.
+    """
+    tournaments_dict = tournaments or markets or {}
     now = datetime.datetime.now(datetime.timezone.utc)
     out = []
     for fx in payload or []:
+        p1_id = str(fx.get("participant1Id"))
+        p2_id = str(fx.get("participant2Id"))
+        home = (participants.get(p1_id) if isinstance(participants, dict) else None) or p1_id
+        away = (participants.get(p2_id) if isinstance(participants, dict) else None) or p2_id
+
+        tourn_id = str(fx.get("tournamentId"))
+        t_info = (tournaments_dict.get(tourn_id) if isinstance(tournaments_dict, dict) else None) or {}
+        league = t_info.get("tournamentSlug") or t_info.get("tournamentName") or tourn_id
+        category = t_info.get("categoryName") or t_info.get("categorySlug")
+
         books = []
         for bk, bd in (fx.get("bookmakerOdds") or {}).items():
+            markets_map = bd.get("markets") or {}
+            
+            # Recherche ciblée du marché 1X2 (ID '101' standard OddsPapi ou moneyline)
+            target_market = markets_map.get("101")
+            if not target_market:
+                for mid, mdata in markets_map.items():
+                    bm_id = str(mdata.get("bookmakerMarketId", "")).lower()
+                    if "moneyline" in bm_id or "1x2" in bm_id:
+                        target_market = mdata
+                        break
+            if not target_market and markets_map:
+                # Fallback : premier marché contenant home et away
+                for mid, mdata in markets_map.items():
+                    sub_keys = set()
+                    for oid, oc in (mdata.get("outcomes") or {}).items():
+                        for pid, pl in (oc.get("players") or {}).items():
+                            sub_keys.add(str(pl.get("bookmakerOutcomeId") or oid).lower())
+                    if "home" in sub_keys and "away" in sub_keys:
+                        target_market = mdata
+                        break
+
+            if not target_market:
+                continue
+
             prices, limits, ages = {}, {}, []
-            for _mid, mk in (bd.get("markets") or {}).items():
-                for _oid, oc in (mk.get("outcomes") or {}).items():
-                    for _pid, pl in (oc.get("players") or {}).items():
-                        price = pl.get("price")
-                        if not price:
-                            continue
-                        key = (pl.get("bookmakerOutcomeId") or _oid)
-                        key = str(key).lower()
-                        if key in ("home", "1"):
-                            key = str(fx.get("participant1Id"))
-                        elif key in ("away", "2"):
-                            key = str(fx.get("participant2Id"))
-                        elif key in ("draw", "x"):
-                            key = "Draw"
-                        if price > 1.0 and (key not in prices or price > prices[key]):
-                            prices[key] = float(price)
-                            lim = pl.get("limit")
-                            if lim:
-                                limits[key] = lim
-                        if pl.get("changedAt"):
-                            try:
-                                t = datetime.datetime.fromisoformat(pl["changedAt"].replace("Z", "+00:00"))
-                                ages.append((now - t).total_seconds())
-                            except ValueError:
-                                pass
+            for _oid, oc in (target_market.get("outcomes") or {}).items():
+                for _pid, pl in (oc.get("players") or {}).items():
+                    price = pl.get("price")
+                    if not price or float(price) <= 1.0:
+                        continue
+                    price = float(price)
+                    raw_key = str(pl.get("bookmakerOutcomeId") or _oid).lower()
+                    if raw_key in ("home", "1"):
+                        key = home
+                    elif raw_key in ("away", "2"):
+                        key = away
+                    elif raw_key in ("draw", "x"):
+                        key = "Draw"
+                    else:
+                        key = raw_key
+
+                    if key not in prices or price > prices[key]:
+                        prices[key] = price
+                        lim = pl.get("limit")
+                        if lim:
+                            limits[key] = lim
+                    if pl.get("changedAt"):
+                        try:
+                            t = datetime.datetime.fromisoformat(pl["changedAt"].replace("Z", "+00:00"))
+                            ages.append((now - t).total_seconds())
+                        except ValueError:
+                            pass
+
             if len(prices) < 2:
                 continue
+
             d = _devig(prices)
-            books.append({"name": bk, "prices": prices, "limits": limits,
-                          "updated_at": bd.get("changedAt") or fx.get("updatedAt"),
-                          "age_s": min(ages) if ages else None,
-                          "active": bd.get("bookmakerIsActive"), **d})
+            books.append({
+                "name": bk.capitalize() if bk.islower() else bk,
+                "prices": prices,
+                "limits": limits,
+                "updated_at": bd.get("changedAt") or fx.get("updatedAt"),
+                "age_s": min(ages) if ages else None,
+                "active": bd.get("bookmakerIsActive"),
+                **d
+            })
+
         if books:
-            out.append({"source": "oddspapi", "id": fx.get("fixtureId"),
-                        "league": str(fx.get("tournamentId")),
-                        "home": str(fx.get("participant1Id")), "away": str(fx.get("participant2Id")),
-                        "kickoff": fx.get("startTime"), "books": books})
+            out.append({
+                "source": "oddspapi",
+                "id": fx.get("fixtureId"),
+                "league": league,
+                "category": category,
+                "home": home,
+                "away": away,
+                "kickoff": fx.get("startTime"),
+                "books": books
+            })
     return out
 
 
@@ -231,7 +287,7 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
 
             ev_val = compute_ev(p, best)
             k_quarter = kelly_fraction(p, best, fraction=0.25)
-            lg_info = resolve_league(ev.get("league"))
+            lg_info = resolve_league(ev.get("league"), fallback_country=ev.get("category"))
 
             rows.append({
                 "event_id": ev.get("id"),
