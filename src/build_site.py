@@ -1478,21 +1478,21 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
   let currentPortal = 'portal1';
 
   const PORTAL_INFOS = {{
-    'portal1': {{
-      title: '🛡️ Portail 1 : Double Palier Stratégique (Coffre-Fort & Pépites Value)',
-      desc: 'Sépare les opportunités en deux tiers étanches : les bases ultra-solides (p &ge; 65%, strike rate visé 75%) et les pépites sous-évaluées par le marché (p &ge; 45%, EV &gt; +1%). Règle stricte : <strong>1 seul pari par match</strong> (sélection la plus sécuritaire). Tout pari &lt; 40% est banni.'
+    "portal1": {{
+      title: "🛡️ Portail 1 : Double Palier Stratégique (Coffre-Fort & Pépites Value)",
+      desc: "Sépare les opportunités en deux tiers étanches : les bases ultra-solides (p &ge; 65%, strike rate visé 75%) et les pépites sous-évaluées par le marché (p &ge; 45%, EV &gt; +1%). Règle stricte : <strong>1 seul pari par match</strong> (sélection la plus sécuritaire). Tout pari &lt; 40% est banni."
     }},
-    'portal2': {{
-      title: '📈 Portail 2 : Ratio de Sharpe Sportif (Modèle Quantitatif Markowitz)',
-      desc: 'Optimisation rendement / risque (Sharpe = EV / &sigma;). Les cotes monstres et les outsiders &lt; 40% sont lourdement pénalisés. Chaque sélection reçoit un <strong>Bet Quality Index (BQI /100)</strong> et un Grade (A+, A, B+). Seul le Top 35 mondial est retenu.'
+    "portal2": {{
+      title: "📈 Portail 2 : Ratio de Sharpe Sportif (Modèle Quantitatif Markowitz)",
+      desc: "Optimisation rendement / risque (Sharpe = EV / &sigma;). Les cotes monstres et les outsiders &lt; 40% sont lourdement pénalisés. Chaque sélection reçoit un <strong>Bet Quality Index (BQI /100)</strong> et un Grade (A+, A, B+). Seul le Top 35 mondial est retenu."
     }},
-    'portal3': {{
-      title: '🎯 Portail 3 : Filtre Dur Sécuritaire (Anti-Bruit Strict)',
-      desc: 'Aucune tolérance statistique : probabilité sharp minimale de 55%, cote strictement bornée entre 1.35 et 2.30, espérance EV &ge; 0% et liquidité institutionnelle vérifiée (marge Pinnacle &le; 5%). Les paris les plus purs.'
+    "portal3": {{
+      title: "🎯 Portail 3 : Filtre Dur Sécuritaire (Anti-Bruit Strict)",
+      desc: "Aucune tolérance statistique : probabilité sharp minimale de 55%, cote strictement bornée entre 1.35 et 2.30, espérance EV &ge; 0% et liquidité institutionnelle vérifiée (marge Pinnacle &le; 5%). Les paris les plus purs."
     }},
-    'all': {{
-      title: '🌐 Flux Brut Exhaustif (Bookmaker Feed non filtré)',
-      desc: 'Affiche l\'intégralité des signaux bruts collectés auprès des bookmakers sans filtre anti-bruit ni déduplication par match. Utilisé pour comparer et auditer le volume de bruit éliminé.'
+    "all": {{
+      title: "🌐 Flux Brut Exhaustif (Bookmaker Feed non filtré)",
+      desc: "Affiche l'intégralité des signaux bruts collectés auprès des bookmakers sans filtre anti-bruit ni déduplication par match. Utilisé pour comparer et auditer le volume de bruit éliminé."
     }}
   }};
 
