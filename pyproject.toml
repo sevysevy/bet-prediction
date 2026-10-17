@@ -1,0 +1,11 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bet-prediction"
+version = "2.0.0"
+description = "Plateforme d'analyse et prédiction de marché de paris basée sur les cotes dévigorisées"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []

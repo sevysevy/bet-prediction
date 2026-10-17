@@ -1,0 +1,2 @@
+# Projet sans dépendance externe obligatoire (bibliothèque standard Python 3.11+)
+# Fichier requis pour la détection automatique du runtime Python par Dokploy / Nixpacks / Buildpacks

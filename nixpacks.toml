@@ -1,0 +1,6 @@
+# Configuration Nixpacks pour Dokploy
+[phases.setup]
+nixPkgs = ["python312"]
+
+[start]
+cmd = "python src/serve.py --port ${PORT:-8080} --every 3"
