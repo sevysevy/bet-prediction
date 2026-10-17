@@ -211,6 +211,231 @@ def collect():
         return oddspapi_events, op_info or "oddspapi"
 
 
+# ------------------------------------------------------------------ Scores & Résultats
+def collect_scores(theodds_key):
+    """
+    Récupère les scores récents (en direct et terminés des dernières 48h)
+    pour les 5 grandes ligues européennes via The Odds API.
+    """
+    scores_map = {}
+    if not theodds_key:
+        return scores_map
+    top_leagues = [
+        "soccer_epl", "soccer_france_ligue_one", "soccer_germany_bundesliga",
+        "soccer_spain_la_liga", "soccer_italy_serie_a"
+    ]
+    for lg in top_leagues:
+        try:
+            data, _ = get(f"https://api.the-odds-api.com/v4/sports/{lg}/scores",
+                          {"apiKey": theodds_key, "daysFrom": 2}, cache_ttl_s=900)
+            for m in data or []:
+                h = norm_team_key(m.get("home_team"))
+                a = norm_team_key(m.get("away_team"))
+                scores = m.get("scores") or []
+                h_score, a_score = None, None
+                for s in scores:
+                    if norm_team_key(s.get("name")) == h:
+                        try:
+                            h_score = int(s.get("score"))
+                        except (ValueError, TypeError):
+                            pass
+                    elif norm_team_key(s.get("name")) == a:
+                        try:
+                            a_score = int(s.get("score"))
+                        except (ValueError, TypeError):
+                            pass
+
+                scores_map[(h, a)] = {
+                    "completed": m.get("completed", False),
+                    "home_team": m.get("home_team"),
+                    "away_team": m.get("away_team"),
+                    "home_score": h_score,
+                    "away_score": a_score,
+                    "league": lg,
+                    "commence_time": m.get("commence_time"),
+                    "last_update": m.get("last_update")
+                }
+        except Exception as exc:
+            print(f"  [!] scores {lg} : {exc}", file=sys.stderr)
+    return scores_map
+
+
+def evaluate_outcome(market_type, sel, home, away, home_score, away_score):
+    """
+    Évalue si un pari est Gagné (WON), Perdu (LOST) ou Remboursé (PUSH)
+    en fonction du score final et du marché ciblé.
+    """
+    if home_score is None or away_score is None:
+        return None
+    market_type = str(market_type or "").lower()
+    sel_lower = str(sel or "").lower()
+    norm_h = norm_team_key(home)
+    norm_a = norm_team_key(away)
+
+    if "1x2" in market_type:
+        if home_score > away_score:
+            winner = "home"
+        elif away_score > home_score:
+            winner = "away"
+        else:
+            winner = "draw"
+
+        if "draw" in sel_lower or "nul" in sel_lower:
+            return "WON" if winner == "draw" else "LOST"
+        norm_s = norm_team_key(sel)
+        if norm_s == norm_h or norm_h in norm_s or norm_s in norm_h:
+            return "WON" if winner == "home" else "LOST"
+        if norm_s == norm_a or norm_a in norm_s or norm_s in norm_a:
+            return "WON" if winner == "away" else "LOST"
+        return None
+
+    if "buts" in market_type or "tot" in market_type:
+        total = home_score + away_score
+        val = 2.5
+        if "1.5" in sel:
+            val = 1.5
+        elif "3.5" in sel:
+            val = 3.5
+        elif "2.5" in sel:
+            val = 2.5
+        if "+" in sel or "over" in sel_lower:
+            return "WON" if total > val else "LOST"
+        elif "-" in sel or "under" in sel_lower:
+            return "WON" if total < val else "LOST"
+
+    if "marquent" in market_type or "btts" in market_type:
+        both_scored = (home_score > 0 and away_score > 0)
+        if "oui" in sel_lower or "yes" in sel_lower:
+            return "WON" if both_scored else "LOST"
+        if "non" in sel_lower or "no" in sel_lower:
+            return "WON" if not both_scored else "LOST"
+
+    if "rembours" in market_type or "dnb" in market_type:
+        if home_score == away_score:
+            return "PUSH"
+        winner = "home" if home_score > away_score else "away"
+        norm_s = norm_team_key(sel)
+        if norm_s == norm_h or norm_h in norm_s or norm_s in norm_h:
+            return "WON" if winner == "home" else "LOST"
+        if norm_s == norm_a or norm_a in norm_s or norm_s in norm_a:
+            return "WON" if winner == "away" else "LOST"
+
+    return None
+
+
+def enrich_rows_with_scores(rows, scores_map):
+    """
+    Enrichit chaque ligne avec le statut temporel (UPCOMING, LIVE, FINISHED),
+    le score s'il est connu, et l'évaluation du pronostic (WON, LOST, PUSH).
+    Intègre également les matches terminés des dernières 48h.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for r in rows:
+        ko = r.get("kickoff")
+        dt = None
+        if ko:
+            try:
+                dt = datetime.datetime.fromisoformat(ko.replace("Z", "+00:00"))
+            except Exception:
+                pass
+
+        match_parts = (r.get("match") or "").split(" - ")
+        home_raw = match_parts[0].strip() if len(match_parts) >= 1 else ""
+        away_raw = match_parts[1].strip() if len(match_parts) >= 2 else ""
+
+        h = norm_team_key(home_raw)
+        a = norm_team_key(away_raw)
+
+        sc = scores_map.get((h, a)) or scores_map.get((a, h))
+
+        status = "UPCOMING"
+        score_str = None
+        outcome = None
+        home_score = sc.get("home_score") if sc else None
+        away_score = sc.get("away_score") if sc else None
+
+        if sc and sc.get("completed"):
+            status = "FINISHED"
+            score_str = f"{home_score} - {away_score}" if (home_score is not None and away_score is not None) else "Terminé"
+            outcome = evaluate_outcome(r.get("market_type"), r.get("sel"), home_raw, away_raw, home_score, away_score)
+        elif sc and (home_score is not None and away_score is not None):
+            status = "LIVE"
+            score_str = f"{home_score} - {away_score}"
+        elif dt and dt < now:
+            diff_min = (now - dt).total_seconds() / 60
+            if diff_min > 135:
+                status = "FINISHED"
+                score_str = "Terminé"
+            else:
+                status = "LIVE"
+                score_str = "En direct"
+
+        r["status"] = status
+        r["score_str"] = score_str
+        r["outcome"] = outcome
+        r["home_score"] = home_score
+        r["away_score"] = away_score
+
+    # Intègre les matches terminés récents issus des scores officiels
+    from leagues import resolve_league
+    existing_pairs = set()
+    for r in rows:
+        parts = (r.get("match") or "").split(" - ")
+        if len(parts) >= 2:
+            existing_pairs.add((norm_team_key(parts[0]), norm_team_key(parts[1])))
+            existing_pairs.add((norm_team_key(parts[1]), norm_team_key(parts[0])))
+
+    for (h, a), sc in scores_map.items():
+        if not sc.get("completed"):
+            continue
+        if (h, a) in existing_pairs:
+            continue
+        hs = sc.get("home_score")
+        as_ = sc.get("away_score")
+        if hs is None or as_ is None:
+            continue
+        home_t = sc.get("home_team")
+        away_t = sc.get("away_team")
+        if hs > as_:
+            winner = f"Victoire {home_t}"
+        elif as_ > hs:
+            winner = f"Victoire {away_t}"
+        else:
+            winner = "Match Nul (Draw)"
+
+        lg_info = resolve_league(sc.get("league"))
+        rows.append({
+            "event_id": f"settled_{h}_{a}",
+            "match_id": f"settled_{h}_{a}",
+            "market_type": "1X2 (Résultat)",
+            "league": lg_info["name"],
+            "league_key": sc.get("league") or "general",
+            "country": lg_info["country"],
+            "flag": lg_info["flag"],
+            "badge_url": lg_info["badge_url"],
+            "kickoff": sc.get("commence_time"),
+            "match": f"{home_t} - {away_t}",
+            "sel": winner,
+            "prob": 1.0,
+            "price": 1.0,
+            "book": "Score Officiel",
+            "limit": None,
+            "age_s": None,
+            "book_margin": 0.0,
+            "sharp": "Pinnacle",
+            "sharp_margin": 0.0,
+            "ev": 0.0,
+            "kelly_quarter": 0.0,
+            "status": "FINISHED",
+            "score_str": f"{hs} - {as_}",
+            "outcome": "WON",
+            "home_score": hs,
+            "away_score": as_
+        })
+        existing_pairs.add((h, a))
+        existing_pairs.add((a, h))
+
+
 # ------------------------------------------------------------------ combinés
 def build_combos(events):
     legs = []
@@ -489,6 +714,49 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       display: inline-block;
       letter-spacing: 0.3px;
     }}
+    .badge-live {{
+      background: rgba(239, 68, 68, 0.2);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      font-size: 11px;
+      animation: pulse-live 2s infinite;
+    }}
+    .badge-finished {{
+      background: rgba(100, 116, 139, 0.2);
+      color: #cbd5e1;
+      border: 1px solid rgba(100, 116, 139, 0.35);
+      font-size: 11px;
+    }}
+    .badge-upcoming {{
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      font-size: 11px;
+    }}
+    .badge-won {{
+      background: rgba(16, 185, 129, 0.25);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.5);
+      font-weight: 700;
+      font-size: 11px;
+    }}
+    .badge-lost {{
+      background: rgba(244, 63, 94, 0.2);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      font-weight: 700;
+      font-size: 11px;
+    }}
+    .badge-push {{
+      background: rgba(234, 179, 8, 0.2);
+      color: #facc15;
+      border: 1px solid rgba(234, 179, 8, 0.4);
+      font-size: 11px;
+    }}
+    @keyframes pulse-live {{
+      0%, 100% {{ opacity: 1; transform: scale(1); }}
+      50% {{ opacity: 0.75; transform: scale(0.98); }}
+    }}
 
     /* Tables */
     .table-container {{
@@ -664,6 +932,14 @@ def generate_html(rows, combos, stats, source, demo, now_str):
       <option value="low">Favoris lourds (Cote &lt; 1.30)</option>
       <option value="mid">Favoris moyens (1.30 - 1.80)</option>
       <option value="high">Outsiders (&gt; 1.80)</option>
+    </select>
+    <select class="select-dropdown" id="status-filter" onchange="applyFilters()">
+      <option value="">Tous les statuts</option>
+      <option value="UPCOMING">⏳ À venir</option>
+      <option value="LIVE">🔴 En direct (Live)</option>
+      <option value="FINISHED">🏁 Terminés (Scores)</option>
+      <option value="WON">✅ Pronostics Gagnés</option>
+      <option value="LOST">❌ Pronostics Perdus</option>
     </select>
     <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
       <span style="font-size: 13px; color: var(--text-muted);">Trier par:</span>
@@ -860,11 +1136,57 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     }}
   }}
 
+  function formatKickoff(isoStr) {{
+    if (!isoStr) return '';
+    try {{
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return '';
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const isTomorrow = d.toDateString() === tomorrow.toDateString();
+
+      const timeStr = d.toLocaleTimeString([], {{ hour: '2-digit', minute: '2-digit' }});
+      if (isToday) return `Aujourd'hui ${{timeStr}}`;
+      if (isTomorrow) return `Demain ${{timeStr}}`;
+
+      const days = ['Dim.', 'Lun.', 'Mar.', 'Mer.', 'Jeu.', 'Ven.', 'Sam.'];
+      const dayName = days[d.getDay()];
+      const dateStr = `${{d.getDate().toString().padStart(2, '0')}}/${{(d.getMonth() + 1).toString().padStart(2, '0')}}`;
+      return `${{dayName}} ${{dateStr}} ${{timeStr}}`;
+    }} catch (e) {{
+      return '';
+    }}
+  }}
+
+  function renderStatusBadge(r) {{
+    if (r.status === 'LIVE') {{
+      return `<span class="badge badge-live">🔴 En direct ${{r.score_str ? escapeHtml(r.score_str) : ''}}</span>`;
+    }} else if (r.status === 'FINISHED') {{
+      return `<span class="badge badge-finished">🏁 Terminé ${{r.score_str ? `(${{escapeHtml(r.score_str)}})` : ''}}</span>`;
+    }} else {{
+      return `<span class="badge badge-upcoming">⏳ À venir</span>`;
+    }}
+  }}
+
+  function renderOutcomeBadge(r) {{
+    if (r.outcome === 'WON') {{
+      return `<span class="badge badge-won">✅ Gagné</span>`;
+    }} else if (r.outcome === 'LOST') {{
+      return `<span class="badge badge-lost">❌ Perdu</span>`;
+    }} else if (r.outcome === 'PUSH') {{
+      return `<span class="badge badge-push">🛡️ Remboursé</span>`;
+    }}
+    return '';
+  }}
+
   function applyFilters() {{
     const query = document.getElementById('search-box').value.toLowerCase();
     const market = document.getElementById('market-filter')?.value;
     const league = document.getElementById('league-filter').value;
     const oddsGroup = document.getElementById('odds-filter').value;
+    const statusFilter = document.getElementById('status-filter')?.value;
     const sortBy = document.getElementById('sort-selector').value;
 
     let items = [...(window.APP_DATA.selections || [])];
@@ -877,6 +1199,13 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     }}
     if (league) {{
       items = items.filter(r => r.league === league);
+    }}
+    if (statusFilter) {{
+      if (statusFilter === 'WON' || statusFilter === 'LOST') {{
+        items = items.filter(r => r.outcome === statusFilter);
+      }} else {{
+        items = items.filter(r => r.status === statusFilter);
+      }}
     }}
     if (oddsGroup === 'low') {{
       items = items.filter(r => r.price < 1.30);
@@ -917,10 +1246,19 @@ def generate_html(rows, combos, stats, source, demo, now_str):
             </div>
           </div>
         </td>
-        <td style="font-weight: 600;">${{escapeHtml(r.match)}}</td>
+        <td style="font-weight: 600;">
+          <div>${{escapeHtml(r.match)}}</div>
+          <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+            <span style="font-size: 11px; color: var(--text-muted);">${{formatKickoff(r.kickoff)}}</span>
+            ${{renderStatusBadge(r)}}
+          </div>
+        </td>
         <td>
           ${{r.market_type ? `<div style="margin-bottom: 4px;"><span class="badge badge-market">${{escapeHtml(r.market_type)}}</span></div>` : ''}}
-          <span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+            ${{renderOutcomeBadge(r)}}
+          </div>
         </td>
         <td class="right">
           <div class="prob-bar-container" style="justify-content: flex-end;">
@@ -967,10 +1305,19 @@ def generate_html(rows, combos, stats, source, demo, now_str):
             </div>
           </div>
         </td>
-        <td style="font-weight: 600;">${{escapeHtml(r.match)}}</td>
+        <td style="font-weight: 600;">
+          <div>${{escapeHtml(r.match)}}</div>
+          <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
+            <span style="font-size: 11px; color: var(--text-muted);">${{formatKickoff(r.kickoff)}}</span>
+            ${{renderStatusBadge(r)}}
+          </div>
+        </td>
         <td>
           ${{r.market_type ? `<div style="margin-bottom: 4px;"><span class="badge badge-market">${{escapeHtml(r.market_type)}}</span></div>` : ''}}
-          <span style="color: var(--success); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="color: var(--success); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+            ${{renderOutcomeBadge(r)}}
+          </div>
         </td>
         <td class="right mono" style="font-weight: 700;">${{(r.prob * 100).toFixed(1)}}%</td>
         <td class="right mono" style="font-weight: 700; color: #fff;">${{r.price.toFixed(2)}}</td>
@@ -1139,6 +1486,18 @@ def main():
     if not rows:
         print("  [!] aucune ligne exploitable", file=sys.stderr)
         rows = []
+
+    # Enrichissement avec les scores récents (en direct et terminés) et évaluation des pronostics
+    theodds_key = (os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY") or "").strip().strip('"').strip("'")
+    if theodds_key and not demo:
+        try:
+            scores_map = collect_scores(theodds_key)
+            enrich_rows_with_scores(rows, scores_map)
+        except Exception as exc:
+            print(f"  [!] scores non disponibles : {exc}", file=sys.stderr)
+            enrich_rows_with_scores(rows, {})
+    else:
+        enrich_rows_with_scores(rows, {})
 
     combos = build_combos(events)
 
