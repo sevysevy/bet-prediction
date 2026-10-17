@@ -11,4 +11,4 @@ COPY . /app
 
 EXPOSE 8080
 
-CMD ["python", "src/serve.py", "--port", "8080", "--every", "3"]
+CMD ["python", "src/serve.py", "--port", "8080", "--every", "2"]

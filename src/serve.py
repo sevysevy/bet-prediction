@@ -161,7 +161,7 @@ def main():
     ap = argparse.ArgumentParser(description="Serveur web et API REST bet-prediction")
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8080)), help="Port d'écoute")
     ap.add_argument("--host", default="0.0.0.0", help="Adresse d'écoute")
-    ap.add_argument("--every", type=float, default=3, help="Intervalle de rafraîchissement en heures")
+    ap.add_argument("--every", type=float, default=2, help="Intervalle de rafraîchissement en heures (défaut : 2h)")
     ap.add_argument("--out", default=os.path.join(ROOT, "_site"), help="Répertoire du site")
     ap.add_argument("--demo", action="store_true", help="Mode données simulées")
     ap.add_argument("--once", action="store_true", help="Générer les fichiers et quitter")

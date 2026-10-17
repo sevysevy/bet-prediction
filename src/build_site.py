@@ -55,6 +55,11 @@ THEODDS_KEYS = [
     "soccer_england_league1", "soccer_england_league2"
 ]
 
+# Stratégie de préservation des quotas / tokens :
+ODDSPAPI_CACHE_TTL = 86400  # 1 fois par jour : snapshot Pinnacle et marchés secondaires
+THEODDS_CACHE_TTL = 7200    # Toutes les 2 heures : mise à jour des cotes grand public
+SCORES_CACHE_TTL = 7200     # Toutes les 2 heures : scores synchronisés au passage sans polling live dédié
+
 
 # ------------------------------------------------------------------ collecte
 def collect_oddspapi(key):
@@ -63,7 +68,7 @@ def collect_oddspapi(key):
     
     # 1. Récupération des tournois (mise en cache 24h pour préserver le quota)
     tournaments, _ = get("https://api.oddspapi.io/v4/tournaments",
-                         {"sportId": 10, "apiKey": key}, cache_ttl_s=86400)
+                         {"sportId": 10, "apiKey": key}, cache_ttl_s=ODDSPAPI_CACHE_TTL)
     tournaments_map = {str(t["tournamentId"]): t for t in tournaments} if isinstance(tournaments, list) else {}
 
     # 2. Récupération du dictionnaire des équipes (mise en cache 24h)
@@ -116,7 +121,8 @@ def collect_oddspapi(key):
             time.sleep(1.2)  # Cooldown rate limit obligatoire (1000ms)
         try:
             payload, _ = get("https://api.oddspapi.io/v4/odds-by-tournaments",
-                             {"bookmaker": "pinnacle", "tournamentIds": ",".join(chunk), "apiKey": key})
+                             {"bookmaker": "pinnacle", "tournamentIds": ",".join(chunk), "apiKey": key},
+                             cache_ttl_s=ODDSPAPI_CACHE_TTL)
             if isinstance(payload, list):
                 all_odds.extend(payload)
         except Exception as exc:
@@ -133,7 +139,8 @@ def collect_theodds(api_key, max_leagues: int = 10):
         try:
             data, _ = get(f"https://api.the-odds-api.com/v4/sports/{s}/odds",
                           {"apiKey": api_key, "regions": "eu,uk", "markets": "h2h",
-                           "oddsFormat": "decimal"})
+                           "oddsFormat": "decimal"},
+                          cache_ttl_s=THEODDS_CACHE_TTL)
             if data:
                 events += data
                 ok.append(s)
@@ -227,7 +234,7 @@ def collect_scores(theodds_key):
     for lg in top_leagues:
         try:
             data, _ = get(f"https://api.the-odds-api.com/v4/sports/{lg}/scores",
-                          {"apiKey": theodds_key, "daysFrom": 2}, cache_ttl_s=900)
+                          {"apiKey": theodds_key, "daysFrom": 2}, cache_ttl_s=SCORES_CACHE_TTL)
             for m in data or []:
                 h = norm_team_key(m.get("home_team"))
                 a = norm_team_key(m.get("away_team"))
