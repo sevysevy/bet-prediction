@@ -24,10 +24,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from feeds import (
-    norm_oddspapi, norm_theodds, norm_pinnapi, norm_sportsgameodds,
-    collect_sportsgameodds, modele_commun, pick_sharp, get, KEYS, norm_team_key, teams_match
-)   # noqa: E402
+import feeds                                                    # noqa: E402
+from feeds import norm_oddspapi, norm_theodds, norm_pinnapi, modele_commun, pick_sharp, get, KEYS   # noqa: E402
 from maths import devig_multiplicative, compute_ev, kelly_fraction, compound_combination           # noqa: E402
 import journal                                                  # noqa: E402
 
@@ -185,11 +183,9 @@ def merge_feeds(oddspapi_events, theodds_events):
 def collect():
     oddspapi_key = (os.environ.get("ODDSPAPI_KEY") or "").strip().strip('"').strip("'")
     theodds_key = (os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY") or "").strip().strip('"').strip("'")
-    sgo_key = (os.environ.get("SPORTS_GAMES_ODDS") or os.environ.get("SPORTSGAMEODDS_KEY") or "").strip().strip('"').strip("'")
 
     oddspapi_events, op_info = [], None
     theodds_events, to_info = [], None
-    sgo_events, sgo_info = [], None
 
     if theodds_key:
         try:
@@ -203,193 +199,64 @@ def collect():
         except Exception as exc:
             print(f"  [!] oddspapi : {exc}", file=sys.stderr)
 
-    if sgo_key:
-        try:
-            sgo_events = collect_sportsgameodds(sgo_key)
-            if sgo_events:
-                sgo_info = f"SportsGameOdds ({len(sgo_events)} matches)"
-        except Exception as exc:
-            print(f"  [!] sportsgameodds : {exc}", file=sys.stderr)
-
-    if not theodds_events and not oddspapi_events and not sgo_events:
+    if not theodds_events and not oddspapi_events:
         raise RuntimeError("aucune source disponible (vérifiez que vos clés d'API sont valides)")
 
-    combined = []
-    sources = []
     if theodds_events and oddspapi_events:
         combined = merge_feeds(oddspapi_events, theodds_events)
-        sources.append("Pinnacle Sharp (OddsPapi) + TheOddsAPI")
-    elif oddspapi_events:
-        combined = list(oddspapi_events)
-        sources.append("Pinnacle Sharp (OddsPapi)")
+        return combined, f"Couplé · Pinnacle Sharp (OddsPapi) + Grand Public (TheOddsAPI)"
     elif theodds_events:
-        combined = list(theodds_events)
-        sources.append("TheOddsAPI")
-
-    if sgo_events:
-        existing_keys = set()
-        for ev in combined:
-            h = norm_team_key(ev.get("home"))
-            a = norm_team_key(ev.get("away"))
-            if h and a:
-                existing_keys.add((h, a))
-                existing_keys.add((a, h))
-        for ev in sgo_events:
-            h = norm_team_key(ev.get("home"))
-            a = norm_team_key(ev.get("away"))
-            if (h, a) not in existing_keys:
-                combined.append(ev)
-                existing_keys.add((h, a))
-                existing_keys.add((a, h))
-        sources.append(sgo_info or f"SportsGameOdds ({len(sgo_events)} matches)")
-
-    return combined, " · ".join(sources)
+        return theodds_events, to_info or "the-odds-api"
+    else:
+        return oddspapi_events, op_info or "oddspapi"
 
 
 # ------------------------------------------------------------------ Scores & Résultats
-def collect_scores(theodds_key=None, sgo_key=None):
+def collect_scores(theodds_key):
     """
-    Récupère les scores récents (en direct et terminés) via un moteur multi-sources résilient :
-    1. Scoreboard officiel ESPN (gratuit, illimité, temps réel) pour les 5 grands championnats
-       européens (EPL, La Liga, Ligue 1, Bundesliga, Serie A) et la Champions League.
-    2. SportsGameOdds (clé SPORTS_GAMES_ODDS) pour la MLS, Champions League, NBA, NFL, MLB.
-    3. The Odds API en repli si actif et disposant de crédits.
+    Récupère les scores récents (en direct et terminés des dernières 48h)
+    pour les 5 grandes ligues européennes via The Odds API.
     """
     scores_map = {}
-
-    # Source 1 : Scoreboard ESPN public (Gratuit, illimité, infaillible)
-    espn_leagues = {
-        "eng.1": "soccer_epl",
-        "esp.1": "soccer_spain_la_liga",
-        "fra.1": "soccer_france_ligue_one",
-        "ger.1": "soccer_germany_bundesliga",
-        "ita.1": "soccer_italy_serie_a",
-        "uefa.champions": "soccer_uefa_champs_league"
-    }
-    for slug, lg_key in espn_leagues.items():
+    if not theodds_key:
+        return scores_map
+    top_leagues = [
+        "soccer_epl", "soccer_france_ligue_one", "soccer_germany_bundesliga",
+        "soccer_spain_la_liga", "soccer_italy_serie_a"
+    ]
+    for lg in top_leagues:
         try:
-            url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard"
-            data, _ = get(url, cache_ttl_s=180)
-            for ev in (data.get("events") or []):
-                comp = (ev.get("competitions") or [{}])[0]
-                status_obj = ev.get("status", {})
-                state = status_obj.get("type", {}).get("state")  # pre, in, post
-                desc = status_obj.get("type", {}).get("description")
-                detail = status_obj.get("type", {}).get("detail")
-                commence_time = ev.get("date")
+            data, _ = get(f"https://api.the-odds-api.com/v4/sports/{lg}/scores",
+                          {"apiKey": theodds_key, "daysFrom": 2}, cache_ttl_s=900)
+            for m in data or []:
+                h = norm_team_key(m.get("home_team"))
+                a = norm_team_key(m.get("away_team"))
+                scores = m.get("scores") or []
+                h_score, a_score = None, None
+                for s in scores:
+                    if norm_team_key(s.get("name")) == h:
+                        try:
+                            h_score = int(s.get("score"))
+                        except (ValueError, TypeError):
+                            pass
+                    elif norm_team_key(s.get("name")) == a:
+                        try:
+                            a_score = int(s.get("score"))
+                        except (ValueError, TypeError):
+                            pass
 
-                competitors = comp.get("competitors") or []
-                h_list = [c for c in competitors if c.get("homeAway") == "home"]
-                a_list = [c for c in competitors if c.get("homeAway") == "away"]
-                if not (h_list and a_list):
-                    continue
-                h_c, a_c = h_list[0], a_list[0]
-                h_name = h_c.get("team", {}).get("displayName")
-                a_name = a_c.get("team", {}).get("displayName")
-
-                h_key = norm_team_key(h_name)
-                a_key = norm_team_key(a_name)
-
-                hs, as_ = None, None
-                if state in ("in", "post"):
-                    try:
-                        hs = int(h_c.get("score"))
-                        as_ = int(a_c.get("score"))
-                    except (ValueError, TypeError):
-                        pass
-
-                scores_map[(h_key, a_key)] = {
-                    "completed": (state == "post"),
-                    "home_team": h_name,
-                    "away_team": a_name,
-                    "home_score": hs,
-                    "away_score": as_,
-                    "league": lg_key,
-                    "commence_time": commence_time,
-                    "last_update": commence_time
+                scores_map[(h, a)] = {
+                    "completed": m.get("completed", False),
+                    "home_team": m.get("home_team"),
+                    "away_team": m.get("away_team"),
+                    "home_score": h_score,
+                    "away_score": a_score,
+                    "league": lg,
+                    "commence_time": m.get("commence_time"),
+                    "last_update": m.get("last_update")
                 }
-        except Exception:
-            pass
-
-    # Source 2 : SportsGameOdds (si clé active)
-    sgo_key = (sgo_key or os.environ.get("SPORTS_GAMES_ODDS") or "").strip().strip('"').strip("'")
-    if sgo_key:
-        sgo_leagues = ["UEFA_CHAMPIONS_LEAGUE", "MLS", "NBA", "NFL", "MLB"]
-        for lid in sgo_leagues:
-            try:
-                data, _ = get("https://api.sportsgameodds.com/v2/events",
-                              {"apiKey": sgo_key, "leagueID": lid, "limit": 15},
-                              cache_ttl_s=180)
-                for ev in (data.get("data") or []):
-                    st = ev.get("status") or {}
-                    teams = ev.get("teams") or {}
-                    h_info = teams.get("home") or {}
-                    a_info = teams.get("away") or {}
-                    h_name = h_info.get("names", {}).get("display") or h_info.get("names", {}).get("medium") or h_info.get("teamID")
-                    a_name = a_info.get("names", {}).get("display") or a_info.get("names", {}).get("medium") or a_info.get("teamID")
-                    if not (h_name and a_name):
-                        continue
-                    h_key = norm_team_key(h_name)
-                    a_key = norm_team_key(a_name)
-
-                    hs = h_info.get("score")
-                    as_ = a_info.get("score")
-                    is_completed = bool(st.get("completed") or st.get("ended"))
-
-                    if (h_key, a_key) not in scores_map or (is_completed and not scores_map[(h_key, a_key)].get("completed")):
-                        scores_map[(h_key, a_key)] = {
-                            "completed": is_completed,
-                            "home_team": h_name,
-                            "away_team": a_name,
-                            "home_score": hs,
-                            "away_score": as_,
-                            "league": lid.lower(),
-                            "commence_time": st.get("startsAt"),
-                            "last_update": st.get("startsAt")
-                        }
-            except Exception:
-                pass
-
-    # Source 3 : The Odds API (si disponible et non expiré)
-    if theodds_key:
-        top_leagues = [
-            "soccer_epl", "soccer_france_ligue_one", "soccer_germany_bundesliga",
-            "soccer_spain_la_liga", "soccer_italy_serie_a"
-        ]
-        for lg in top_leagues:
-            try:
-                data, _ = get(f"https://api.the-odds-api.com/v4/sports/{lg}/scores",
-                              {"apiKey": theodds_key, "daysFrom": 2}, cache_ttl_s=900)
-                for m in data or []:
-                    h = norm_team_key(m.get("home_team"))
-                    a = norm_team_key(m.get("away_team"))
-                    scores = m.get("scores") or []
-                    h_score, a_score = None, None
-                    for s in scores:
-                        if norm_team_key(s.get("name")) == h:
-                            try:
-                                h_score = int(s.get("score"))
-                            except (ValueError, TypeError):
-                                pass
-                        elif norm_team_key(s.get("name")) == a:
-                            try:
-                                a_score = int(s.get("score"))
-                            except (ValueError, TypeError):
-                                pass
-
-                    scores_map[(h, a)] = {
-                        "completed": m.get("completed", False),
-                        "home_team": m.get("home_team"),
-                        "away_team": m.get("away_team"),
-                        "home_score": h_score,
-                        "away_score": a_score,
-                        "league": lg,
-                        "commence_time": m.get("commence_time"),
-                        "last_update": m.get("last_update")
-                    }
-            except Exception:
-                pass
-
+        except Exception as exc:
+            print(f"  [!] scores {lg} : {exc}", file=sys.stderr)
     return scores_map
 
 
@@ -400,51 +267,58 @@ def evaluate_outcome(market_type, sel, home, away, home_score, away_score):
     """
     if home_score is None or away_score is None:
         return None
-    market_type = str(market_type or "").lower()
+    market_type = str(market_type or "1x2").lower()
     sel_lower = str(sel or "").lower()
+    norm_h = norm_team_key(home)
+    norm_a = norm_team_key(away)
 
-    # 1. Marché Les 2 équipes marquent (BTTS)
-    if "marquent" in sel_lower or "btts" in sel_lower or "marquent" in market_type or "btts" in market_type:
+    if "1x2" in market_type:
+        if home_score > away_score:
+            winner = "home"
+        elif away_score > home_score:
+            winner = "away"
+        else:
+            winner = "draw"
+
+        if "draw" in sel_lower or "nul" in sel_lower:
+            return "WON" if winner == "draw" else "LOST"
+        norm_s = norm_team_key(sel)
+        if norm_s == norm_h or norm_h in norm_s or norm_s in norm_h:
+            return "WON" if winner == "home" else "LOST"
+        if norm_s == norm_a or norm_a in norm_s or norm_s in norm_a:
+            return "WON" if winner == "away" else "LOST"
+        return None
+
+    if "buts" in market_type or "tot" in market_type:
+        total = home_score + away_score
+        val = 2.5
+        if "1.5" in sel:
+            val = 1.5
+        elif "3.5" in sel:
+            val = 3.5
+        elif "2.5" in sel:
+            val = 2.5
+        if "+" in sel or "over" in sel_lower:
+            return "WON" if total > val else "LOST"
+        elif "-" in sel or "under" in sel_lower:
+            return "WON" if total < val else "LOST"
+
+    if "marquent" in market_type or "btts" in market_type:
         both_scored = (home_score > 0 and away_score > 0)
         if "oui" in sel_lower or "yes" in sel_lower:
             return "WON" if both_scored else "LOST"
         if "non" in sel_lower or "no" in sel_lower:
             return "WON" if not both_scored else "LOST"
 
-    # 2. Marché Total de buts (Over / Under)
-    if "but" in sel_lower or "over" in sel_lower or "under" in sel_lower or "buts" in market_type or "tot" in market_type:
-        total = home_score + away_score
-        m = re.search(r"(\d+(?:\.\d+)?)", sel)
-        val = float(m.group(1)) if m else 2.5
-        if "+" in sel or "over" in sel_lower or "plus" in sel_lower:
-            return "WON" if total > val else "LOST"
-        elif "-" in sel or "under" in sel_lower or "moins" in sel_lower:
-            return "WON" if total < val else "LOST"
-
-    # 3. Marché Remboursé si Nul (Draw No Bet / DNB)
-    if "rembours" in sel_lower or "dnb" in sel_lower or "draw no bet" in sel_lower or "rembours" in market_type or "dnb" in market_type:
+    if "rembours" in market_type or "dnb" in market_type:
         if home_score == away_score:
             return "PUSH"
-        winner_is_home = home_score > away_score
-        if teams_match(sel, home):
-            return "WON" if winner_is_home else "LOST"
-        if teams_match(sel, away):
-            return "WON" if not winner_is_home else "LOST"
-
-    # 4. Marché 1X2 / Résultat du match (ou Moneyline)
-    if home_score > away_score:
-        winner = "home"
-    elif away_score > home_score:
-        winner = "away"
-    else:
-        winner = "draw"
-
-    if "draw" in sel_lower or "nul" in sel_lower:
-        return "WON" if winner == "draw" else "LOST"
-    if teams_match(sel, home):
-        return "WON" if winner == "home" else "LOST"
-    if teams_match(sel, away):
-        return "WON" if winner == "away" else "LOST"
+        winner = "home" if home_score > away_score else "away"
+        norm_s = norm_team_key(sel)
+        if norm_s == norm_h or norm_h in norm_s or norm_s in norm_h:
+            return "WON" if winner == "home" else "LOST"
+        if norm_s == norm_a or norm_a in norm_s or norm_s in norm_a:
+            return "WON" if winner == "away" else "LOST"
 
     return None
 
@@ -487,11 +361,6 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
         a = norm_team_key(away_raw)
 
         sc = scores_map.get((h, a)) or scores_map.get((a, h))
-        if not sc:
-            for (sh, sa), cand in scores_map.items():
-                if (teams_match(home_raw, sh) and teams_match(away_raw, sa)) or (teams_match(home_raw, sa) and teams_match(away_raw, sh)):
-                    sc = cand
-                    break
 
         status = "UPCOMING"
         score_str = None
@@ -518,11 +387,6 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
         # Pour les matches LIVE ou FINISHED, on conserve l'évaluation pré-match d'origine
         if status in ("LIVE", "FINISHED"):
             pm_sels = prematch_db.get((h, a)) or prematch_db.get((a, h))
-            if not pm_sels:
-                for (jh, ja), cand_sels in prematch_db.items():
-                    if (teams_match(home_raw, jh) and teams_match(away_raw, ja)) or (teams_match(home_raw, ja) and teams_match(away_raw, jh)):
-                        pm_sels = cand_sels
-                        break
             if pm_sels:
                 pm = pm_sels.get(r.get("sel"))
                 if pm:
@@ -554,30 +418,17 @@ def enrich_rows_with_scores(rows, scores_map, prematch_db=None):
     for (h, a), sc in scores_map.items():
         if not sc.get("completed"):
             continue
-        home_t = sc.get("home_team")
-        away_t = sc.get("away_team")
-
-        is_existing = (h, a) in existing_pairs or (a, h) in existing_pairs
-        if not is_existing:
-            for (eh, ea) in existing_pairs:
-                if (teams_match(home_t, eh) and teams_match(away_t, ea)) or (teams_match(home_t, ea) and teams_match(away_t, eh)):
-                    is_existing = True
-                    break
-        if is_existing:
+        if (h, a) in existing_pairs:
             continue
-
         hs = sc.get("home_score")
         as_ = sc.get("away_score")
         if hs is None or as_ is None:
             continue
+        home_t = sc.get("home_team")
+        away_t = sc.get("away_team")
 
         # Recherche des évaluations pré-match authentiques dans le journal
         pm_sels = prematch_db.get((h, a)) or prematch_db.get((a, h))
-        if not pm_sels:
-            for (jh, ja), cand_sels in prematch_db.items():
-                if (teams_match(home_t, jh) and teams_match(away_t, ja)) or (teams_match(home_t, ja) and teams_match(away_t, jh)):
-                    pm_sels = cand_sels
-                    break
         if not pm_sels:
             # Si le match n'a jamais été analysé en pré-match, on n'injecte PAS
             # d'évaluation artificielle 100% / 1.00 pour ne pas fausser l'historique
@@ -1838,10 +1689,9 @@ def main():
 
     # Enrichissement avec les scores récents (en direct et terminés) et évaluation des pronostics
     theodds_key = (os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY") or "").strip().strip('"').strip("'")
-    sgo_key = (os.environ.get("SPORTS_GAMES_ODDS") or os.environ.get("SPORTSGAMEODDS_KEY") or "").strip().strip('"').strip("'")
-    if not demo:
+    if theodds_key and not demo:
         try:
-            scores_map = collect_scores(theodds_key=theodds_key, sgo_key=sgo_key)
+            scores_map = collect_scores(theodds_key)
             enrich_rows_with_scores(rows, scores_map)
         except Exception as exc:
             print(f"  [!] scores non disponibles : {exc}", file=sys.stderr)

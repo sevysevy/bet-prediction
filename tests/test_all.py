@@ -189,17 +189,6 @@ class TestEnrichmentAndHistory(unittest.TestCase):
         # BTTS
         self.assertEqual(evaluate_outcome("Les 2 marquent", "Les 2 marquent : Oui", "PSG", "Monaco", 1, 1), "WON")
         self.assertEqual(evaluate_outcome("Les 2 marquent", "Les 2 marquent : Oui", "PSG", "Monaco", 1, 0), "LOST")
-        self.assertEqual(evaluate_outcome(None, "Les 2 marquent : Non", "PSG", "Monaco", 1, 0), "WON")
-        self.assertEqual(evaluate_outcome(None, "Les 2 marquent : Non", "PSG", "Monaco", 1, 1), "LOST")
-
-        # DNB (Remboursé si Nul)
-        self.assertEqual(evaluate_outcome("DNB", "Real Madrid", "Real Madrid", "Barcelona", 2, 1), "WON")
-        self.assertEqual(evaluate_outcome("DNB", "Real Madrid", "Real Madrid", "Barcelona", 1, 1), "PUSH")
-        self.assertEqual(evaluate_outcome("DNB", "Barcelona", "Real Madrid", "Barcelona", 2, 1), "LOST")
-
-        # Tolerant team matching across alias names
-        self.assertEqual(evaluate_outcome("1X2", "Bayern Munich", "FC Bayern München", "Borussia Dortmund", 3, 1), "WON")
-        self.assertEqual(evaluate_outcome("1X2", "Inter Milan", "Internazionale", "AC Milan", 0, 1), "LOST")
 
     def test_enrich_preserves_prematch_and_no_fake_odds(self):
         from build_site import enrich_rows_with_scores
