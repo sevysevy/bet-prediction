@@ -1120,16 +1120,42 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       transform: scale(0.96);
     }}
 
-    /* Bet Slip Floating Drawer */
+    /* Bet Slip Floating Drawer (Draggable) */
     .slip-drawer {{
       position: fixed; bottom: 20px; right: 20px; width: 360px;
       background: #0f172a; border: 1px solid #334155; border-radius: 16px;
-      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6); z-index: 100;
-      display: flex; flex-direction: column; overflow: hidden; transition: transform 0.3s ease;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6); z-index: 1000;
+      display: flex; flex-direction: column; overflow: hidden;
+      touch-action: none;
+    }}
+    .slip-drawer.is-dragging {{
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.85), 0 0 0 2px var(--primary);
+      opacity: 0.95;
+      cursor: grabbing !important;
+      transition: none !important;
     }}
     .slip-header {{
-      background: #1e293b; padding: 14px 18px; display: flex; justify-content: space-between;
-      align-items: center; font-weight: 700; font-size: 14px; cursor: pointer;
+      background: #1e293b; padding: 12px 16px; display: flex; justify-content: space-between;
+      align-items: center; font-weight: 700; font-size: 14px; cursor: grab;
+      user-select: none; -webkit-user-select: none;
+    }}
+    .slip-header:active {{
+      cursor: grabbing;
+    }}
+    .slip-drag-pill {{
+      display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+    }}
+    .drag-handle-dots {{
+      font-size: 15px; color: var(--text-muted); cursor: grab; line-height: 1;
+    }}
+    .btn-slip-action {{
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text-muted); border-radius: 6px; padding: 2px 7px; font-size: 11px;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+      transition: all 0.15s ease;
+    }}
+    .btn-slip-action:hover {{
+      background: rgba(255, 255, 255, 0.18); color: #fff;
     }}
     .slip-body {{ padding: 16px; max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }}
     .slip-item {{
@@ -1493,11 +1519,21 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     </div>
   </div>
 
-  <!-- Bet Slip Floating Drawer -->
+  <!-- Bet Slip Floating Drawer (Draggable) -->
   <div class="slip-drawer" id="bet-slip">
-    <div class="slip-header" onclick="toggleSlip()">
-      <span>🎟️ Mon Coupon & Simulateur (<span id="slip-count">0</span>)</span>
-      <span id="slip-toggle-icon">▼</span>
+    <div class="slip-header" id="slip-header">
+      <div class="slip-drag-pill" title="Glisser pour déplacer le coupon n'importe où sur l'écran">
+        <span class="drag-handle-dots" title="Glisser pour déplacer">⠿</span>
+        <span>🎟️ Mon Coupon & Simulateur (<span id="slip-count">0</span>)</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <button type="button" class="btn-slip-action" id="btn-slip-reset" title="Réinitialiser la position d'origine" onclick="resetSlipPosition(event)" style="display: none;">
+          ↺ Re-centrer
+        </button>
+        <button type="button" class="btn-slip-action" id="btn-slip-toggle" title="Réduire / Développer le coupon" onclick="toggleSlip(event)">
+          <span id="slip-toggle-icon">▼</span>
+        </button>
+      </div>
     </div>
     <div class="slip-body">
       <div id="slip-items">
@@ -1594,6 +1630,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     populateLeagues();
     switchPortal('portal1');
     renderJournalTable();
+    initDraggableSlip();
   }}
 
   function populateLeagues() {{
@@ -2241,8 +2278,173 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     document.getElementById('slip-kelly-stake').textContent = stake > 0 ? Math.round(stake).toLocaleString('fr-FR') + ' XAF' : '0 XAF (EV négative)';
   }}
 
-  function toggleSlip() {{
-    document.getElementById('bet-slip').classList.toggle('slip-collapsed');
+  // --- Draggable Bet Slip Functionality ---
+  let isSlipDragging = false;
+  let slipDragStartX = 0;
+  let slipDragStartY = 0;
+  let slipElemStartX = 0;
+  let slipElemStartY = 0;
+  let slipHasMoved = false;
+
+  function initDraggableSlip() {{
+    const drawer = document.getElementById('bet-slip');
+    const header = document.getElementById('slip-header');
+    if (!drawer || !header) return;
+
+    // Restaurer la position sauvegardée si présente
+    try {{
+      const savedX = localStorage.getItem('betslip_pos_x');
+      const savedY = localStorage.getItem('betslip_pos_y');
+      if (savedX !== null && savedY !== null) {{
+        applySlipPosition(parseFloat(savedX), parseFloat(savedY));
+        const btnReset = document.getElementById('btn-slip-reset');
+        if (btnReset) btnReset.style.display = 'inline-flex';
+      }}
+    }} catch (e) {{}}
+
+    // Mouse handlers
+    header.addEventListener('mousedown', onSlipPointerDown);
+    // Touch handlers
+    header.addEventListener('touchstart', onSlipPointerDown, {{ passive: false }});
+
+    window.addEventListener('resize', clampSlipToScreen);
+  }}
+
+  function onSlipPointerDown(e) {{
+    // Ignorer si clic sur un bouton
+    if (e.target && e.target.closest('button')) return;
+
+    const drawer = document.getElementById('bet-slip');
+    if (!drawer) return;
+
+    const isTouch = e.type === 'touchstart';
+    const point = isTouch ? e.touches[0] : e;
+
+    isSlipDragging = true;
+    slipHasMoved = false;
+    slipDragStartX = point.clientX;
+    slipDragStartY = point.clientY;
+
+    const rect = drawer.getBoundingClientRect();
+    slipElemStartX = rect.left;
+    slipElemStartY = rect.top;
+
+    drawer.classList.add('is-dragging');
+
+    if (isTouch) {{
+      document.addEventListener('touchmove', onSlipPointerMove, {{ passive: false }});
+      document.addEventListener('touchend', onSlipPointerUp);
+      document.addEventListener('touchcancel', onSlipPointerUp);
+    }} else {{
+      document.addEventListener('mousemove', onSlipPointerMove);
+      document.addEventListener('mouseup', onSlipPointerUp);
+      e.preventDefault();
+    }}
+  }}
+
+  function onSlipPointerMove(e) {{
+    if (!isSlipDragging) return;
+    const isTouch = e.type === 'touchmove';
+    const point = isTouch ? e.touches[0] : e;
+
+    const dx = point.clientX - slipDragStartX;
+    const dy = point.clientY - slipDragStartY;
+
+    if (!slipHasMoved && Math.hypot(dx, dy) > 4) {{
+      slipHasMoved = true;
+    }}
+
+    if (slipHasMoved) {{
+      if (isTouch) e.preventDefault();
+      applySlipPosition(slipElemStartX + dx, slipElemStartY + dy);
+    }}
+  }}
+
+  function onSlipPointerUp(e) {{
+    if (!isSlipDragging) return;
+    isSlipDragging = false;
+    const drawer = document.getElementById('bet-slip');
+    if (drawer) {{
+      drawer.classList.remove('is-dragging');
+    }}
+
+    document.removeEventListener('mousemove', onSlipPointerMove);
+    document.removeEventListener('mouseup', onSlipPointerUp);
+    document.removeEventListener('touchmove', onSlipPointerMove);
+    document.removeEventListener('touchend', onSlipPointerUp);
+    document.removeEventListener('touchcancel', onSlipPointerUp);
+
+    if (!slipHasMoved) {{
+      // Simple clic sans déplacement -> réduire / développer
+      toggleSlip();
+    }} else {{
+      if (drawer) {{
+        const rect = drawer.getBoundingClientRect();
+        try {{
+          localStorage.setItem('betslip_pos_x', rect.left);
+          localStorage.setItem('betslip_pos_y', rect.top);
+        }} catch (err) {{}}
+        const btnReset = document.getElementById('btn-slip-reset');
+        if (btnReset) btnReset.style.display = 'inline-flex';
+      }}
+    }}
+  }}
+
+  function applySlipPosition(x, y) {{
+    const drawer = document.getElementById('bet-slip');
+    if (!drawer) return;
+
+    const rect = drawer.getBoundingClientRect();
+    const w = rect.width || 360;
+    const h = rect.height || 60;
+
+    const minX = 10;
+    const maxX = Math.max(minX, window.innerWidth - w - 10);
+    const minY = 10;
+    const maxY = Math.max(minY, window.innerHeight - h - 10);
+
+    const clampedX = Math.round(Math.max(minX, Math.min(x, maxX)));
+    const clampedY = Math.round(Math.max(minY, Math.min(y, maxY)));
+
+    drawer.style.left = clampedX + 'px';
+    drawer.style.top = clampedY + 'px';
+    drawer.style.right = 'auto';
+    drawer.style.bottom = 'auto';
+  }}
+
+  function clampSlipToScreen() {{
+    const drawer = document.getElementById('bet-slip');
+    if (!drawer || !drawer.style.left) return;
+    const rect = drawer.getBoundingClientRect();
+    applySlipPosition(rect.left, rect.top);
+  }}
+
+  function resetSlipPosition(e) {{
+    if (e) e.stopPropagation();
+    const drawer = document.getElementById('bet-slip');
+    if (!drawer) return;
+    drawer.style.left = '';
+    drawer.style.top = '';
+    drawer.style.right = '20px';
+    drawer.style.bottom = '20px';
+    try {{
+      localStorage.removeItem('betslip_pos_x');
+      localStorage.removeItem('betslip_pos_y');
+    }} catch (err) {{}}
+    const btnReset = document.getElementById('btn-slip-reset');
+    if (btnReset) btnReset.style.display = 'none';
+  }}
+
+  function toggleSlip(e) {{
+    if (e) e.stopPropagation();
+    const drawer = document.getElementById('bet-slip');
+    if (!drawer) return;
+    const isCollapsed = drawer.classList.toggle('slip-collapsed');
+    const icon = document.getElementById('slip-toggle-icon');
+    if (icon) {{
+      icon.textContent = isCollapsed ? '▲' : '▼';
+    }}
+    setTimeout(clampSlipToScreen, 50);
   }}
 
   async function triggerManualRefresh() {{
