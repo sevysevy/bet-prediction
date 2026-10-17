@@ -237,7 +237,10 @@ def collect_scores(theodds_key):
         return scores_map
     top_leagues = [
         "soccer_epl", "soccer_france_ligue_one", "soccer_germany_bundesliga",
-        "soccer_spain_la_liga", "soccer_italy_serie_a"
+        "soccer_spain_la_liga", "soccer_italy_serie_a",
+        "soccer_germany_bundesliga2", "soccer_efl_champ", "soccer_netherlands_eredivisie",
+        "soccer_portugal_primeira_liga", "soccer_spain_segunda_division",
+        "soccer_france_ligue_two", "soccer_italy_serie_b", "soccer_belgium_first_div"
     ]
     for lg in top_leagues:
         try:
@@ -1251,7 +1254,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       🔗 Combinés Filtrés <span class="tab-count">{len(combos)}</span>
     </button>
     <button class="tab-btn" onclick="switchTab('journal')">
-      📊 Suivi & Journal CLV <span class="tab-count">{stats.get('total_signals', 0)}</span>
+      📊 Résultats & Bilan <span class="tab-count" id="count-journal-finished">{len([r for r in rows if r.get('status') == 'FINISHED'])}</span>
     </button>
     <button class="tab-btn" onclick="switchTab('methodo')">
       ℹ️ Méthodologie & Risque
@@ -1304,7 +1307,8 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       <option value="">Tous les statuts</option>
       <option value="UPCOMING">⏳ À venir</option>
       <option value="LIVE">🔴 En direct (Live)</option>
-      <option value="FINISHED">🏁 Terminés (Scores)</option>
+      <option value="FINISHED">🏁 Terminés (Portail actif)</option>
+      <option value="FINISHED_ALL">🏁 Tous les Matchs Terminés (Toutes ligues)</option>
       <option value="WON">✅ Pronostics Gagnés</option>
       <option value="LOST">❌ Pronostics Perdus</option>
     </select>
@@ -1318,6 +1322,8 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       </select>
     </div>
   </div>
+
+  <div id="finished-filter-hint" style="display: none; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; color: #93c5fd;"></div>
 
   <!-- Tab 1: Plus Probables -->
   <div id="tab-probables" class="tab-content">
@@ -1399,7 +1405,42 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
         <span class="stat-sub">Append-only · Traçabilité CLV</span>
       </div>
     </div>
-    <div class="edu-card">
+
+    <div style="margin-top: 24px; margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+      <div>
+        <h3 style="font-size: 18px; color: #fff;">🏁 Matchs Terminés & Suivi des Résultats</h3>
+        <p style="font-size: 12.5px; color: var(--text-muted); margin-top: 2px;">
+          Historique authentique des rencontres achevées avec scores réels, cotes pré-match et bilan Gagné / Perdu.
+        </p>
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <span class="badge badge-finished" id="journal-count-total">0 match(s) terminé(s)</span>
+        <span class="badge badge-won" id="journal-count-won">0 gagné(s)</span>
+        <span class="badge badge-lost" id="journal-count-lost">0 perdu(s)</span>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <table>
+        <thead>
+          <tr>
+            <th>Compétition</th>
+            <th>Match & Horaires</th>
+            <th>Pronostic Enregistré</th>
+            <th class="right">Probabilité Initiale</th>
+            <th class="right">Cote Prise</th>
+            <th>Bookmaker</th>
+            <th>Score Final</th>
+            <th class="right">Résultat Pronostic</th>
+          </tr>
+        </thead>
+        <tbody id="table-journal-body">
+          <!-- Rempli par JavaScript -->
+        </tbody>
+      </table>
+    </div>
+
+    <div class="edu-card" style="margin-top: 24px;">
       <h3>Suivi du Closing Line Value (CLV)</h3>
       <p>
         Selon la contrainte scientifique C7, la rentabilité à court terme (P&L) est trop bruitée pour attester d'un avantage réel.
@@ -1531,6 +1572,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
   function initApp() {{
     populateLeagues();
     switchPortal('portal1');
+    renderJournalTable();
   }}
 
   function populateLeagues() {{
@@ -1552,12 +1594,17 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
 
     const filterBar = document.getElementById('filter-bar');
     const dateBar = document.getElementById('date-bar');
+    const finishedHint = document.getElementById('finished-filter-hint');
     if (tabId === 'probables' || tabId === 'value') {{
       filterBar.style.display = 'flex';
       if (dateBar) dateBar.style.display = 'flex';
     }} else {{
       filterBar.style.display = 'none';
       if (dateBar) dateBar.style.display = 'none';
+      if (finishedHint) finishedHint.style.display = 'none';
+    }}
+    if (tabId === 'journal') {{
+      renderJournalTable();
     }}
   }}
 
@@ -1746,10 +1793,30 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     if (league) {{
       items = items.filter(r => r.league === league);
     }}
-    if (statusFilter) {{
+    const finishedHint = document.getElementById('finished-filter-hint');
+    if (statusFilter === 'FINISHED_ALL') {{
+      items = (window.APP_DATA.selections || []).filter(r => r.status === 'FINISHED');
+      if (finishedHint) {{
+        finishedHint.style.display = 'block';
+        finishedHint.innerHTML = `🏁 Affichage de l'ensemble des <strong>${{items.length}} matchs terminés</strong> (toutes ligues et flux bookmakers confondus).`;
+      }}
+    }} else if (statusFilter === 'FINISHED') {{
+      items = items.filter(r => r.status === 'FINISHED');
+      const allFinishedCount = (window.APP_DATA.selections || []).filter(r => r.status === 'FINISHED').length;
+      if (finishedHint) {{
+        finishedHint.style.display = 'block';
+        if (currentPortal !== 'all') {{
+          finishedHint.innerHTML = `🏁 <strong>${{items.length}} match(s) terminé(s)</strong> qualifié(s) par les critères stricts de ce portail. <a href="javascript:void(0)" onclick="document.getElementById('status-filter').value='FINISHED_ALL'; applyFilters();" style="color: var(--primary); text-decoration: underline; margin-left: 6px; font-weight: 600;">Voir les ${{allFinishedCount}} matchs terminés du jour (Toutes ligues) &rarr;</a>`;
+        }} else {{
+          finishedHint.innerHTML = `🏁 <strong>${{items.length}} matchs terminés</strong> affichés.`;
+        }}
+      }}
+    }} else {{
+      if (finishedHint) finishedHint.style.display = 'none';
       if (statusFilter === 'WON' || statusFilter === 'LOST') {{
-        items = items.filter(r => r.outcome === statusFilter);
-      }} else {{
+        const portalMatches = items.filter(r => r.outcome === statusFilter);
+        items = portalMatches.length > 0 ? portalMatches : (window.APP_DATA.selections || []).filter(r => r.outcome === statusFilter);
+      }} else if (statusFilter) {{
         items = items.filter(r => r.status === statusFilter);
       }}
     }}
@@ -1835,9 +1902,22 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
         <td class="right"><span class="badge ${{evClass}} mono">${{r.ev >= 0 ? '+' : ''}}${{(r.ev * 100).toFixed(1)}}%</span></td>
         <td class="right mono" style="color: var(--text-muted);">${{r.kelly_quarter > 0 ? (r.kelly_quarter * 100).toFixed(1) + '%' : '—'}}</td>
         <td class="right">
-          <button class="btn-add ${{inSlip ? 'in-slip' : ''}}" onclick='toggleSlipItem(${{JSON.stringify(r)}})'>
-            ${{inSlip ? '✓ Ajouté' : '+ Coupon'}}
-          </button>
+          ${{r.status === 'FINISHED' ? `
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+              ${{r.outcome === 'WON' 
+                ? '<span class="badge badge-won" style="font-weight: 700;">✅ Gagné</span>'
+                : r.outcome === 'LOST'
+                ? '<span class="badge badge-lost" style="font-weight: 700;">❌ Perdu</span>'
+                : r.outcome === 'PUSH'
+                ? '<span class="badge badge-push" style="font-weight: 700;">🛡️ Remboursé</span>'
+                : `<span class="badge badge-finished">🏁 ${{escapeHtml(r.score_str || 'Terminé')}}</span>`
+              }}
+            </div>
+          ` : `
+            <button class="btn-add ${{inSlip ? 'in-slip' : ''}}" onclick='toggleSlipItem(${{JSON.stringify(r)}})'>
+              ${{inSlip ? '✓ Ajouté' : '+ Coupon'}}
+            </button>
+          `}}
         </td>
       `;
       tbody.appendChild(tr);
@@ -1887,10 +1967,89 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
         <td class="right"><span class="badge badge-pos mono">+${{(r.ev * 100).toFixed(1)}}%</span></td>
         <td class="right mono" style="font-weight: 700; color: var(--success);">${{(r.kelly_quarter * 100).toFixed(1)}}% du capital</td>
         <td class="right">
-          <button class="btn-add ${{inSlip ? 'in-slip' : ''}}" onclick='toggleSlipItem(${{JSON.stringify(r)}})'>
-            ${{inSlip ? '✓ Ajouté' : '+ Coupon'}}
-          </button>
+          ${{r.status === 'FINISHED' ? `
+            <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+              ${{r.outcome === 'WON' 
+                ? '<span class="badge badge-won" style="font-weight: 700;">✅ Gagné</span>'
+                : r.outcome === 'LOST'
+                ? '<span class="badge badge-lost" style="font-weight: 700;">❌ Perdu</span>'
+                : r.outcome === 'PUSH'
+                ? '<span class="badge badge-push" style="font-weight: 700;">🛡️ Remboursé</span>'
+                : `<span class="badge badge-finished">🏁 ${{escapeHtml(r.score_str || 'Terminé')}}</span>`
+              }}
+            </div>
+          ` : `
+            <button class="btn-add ${{inSlip ? 'in-slip' : ''}}" onclick='toggleSlipItem(${{JSON.stringify(r)}})'>
+              ${{inSlip ? '✓ Ajouté' : '+ Coupon'}}
+            </button>
+          `}}
         </td>
+      `;
+      tbody.appendChild(tr);
+    }});
+  }}
+
+  function renderJournalTable() {{
+    const tbody = document.getElementById('table-journal-body');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const all = window.APP_DATA.selections || [];
+    const finished = all.filter(r => r.status === 'FINISHED');
+
+    let won = 0, lost = 0, push = 0;
+    finished.forEach(r => {{
+      if (r.outcome === 'WON') won++;
+      else if (r.outcome === 'LOST') lost++;
+      else if (r.outcome === 'PUSH') push++;
+    }});
+
+    const elTotal = document.getElementById('journal-count-total');
+    if (elTotal) elTotal.textContent = `${{finished.length}} match(s) terminé(s)`;
+    const elWon = document.getElementById('journal-count-won');
+    if (elWon) elWon.textContent = `${{won}} gagné(s)`;
+    const elLost = document.getElementById('journal-count-lost');
+    if (elLost) elLost.textContent = `${{lost}} perdu(s)`;
+    const elTabCount = document.getElementById('count-journal-finished');
+    if (elTabCount) elTabCount.textContent = finished.length;
+
+    if (finished.length === 0) {{
+      tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 30px;">Aucun match terminé récent enregistré dans cette session.</td></tr>`;
+      return;
+    }}
+
+    finished.forEach(r => {{
+      const tr = document.createElement('tr');
+      const scoreDisplay = (r.score_str && r.score_str !== 'Terminé') ? r.score_str : 'Score en attente';
+      let outcomeHtml = '<span class="badge badge-finished">🏁 Terminé</span>';
+      if (r.outcome === 'WON') outcomeHtml = '<span class="badge badge-won" style="font-weight: 700;">✅ Gagné</span>';
+      else if (r.outcome === 'LOST') outcomeHtml = '<span class="badge badge-lost" style="font-weight: 700;">❌ Perdu</span>';
+      else if (r.outcome === 'PUSH') outcomeHtml = '<span class="badge badge-push" style="font-weight: 700;">🛡️ Remboursé</span>';
+
+      tr.innerHTML = `
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${{r.badge_url ? `<img src="${{r.badge_url}}" width="20" height="15" style="border-radius: 3px; object-fit: cover;" onerror="this.style.display='none'">` : ''}}
+            <div>
+              <div style="font-weight: 600; color: #fff;">${{escapeHtml(r.league)}}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">${{r.flag || '⚽'}} ${{escapeHtml(r.country || '')}}</div>
+            </div>
+          </div>
+        </td>
+        <td style="font-weight: 600;">
+          <div>${{escapeHtml(r.match)}}</div>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">${{formatKickoff(r.kickoff)}}</div>
+        </td>
+        <td>
+          <span style="color: var(--primary); font-weight: 600;">${{escapeHtml(r.sel)}}</span>
+          ${{r.market_type ? `<div style="font-size: 11px; color: var(--text-muted);">${{escapeHtml(r.market_type)}}</div>` : ''}}
+          ${{renderPortalBadge(r)}}
+        </td>
+        <td class="right mono" style="font-weight: 700;">${{(r.prob * 100).toFixed(1)}}%</td>
+        <td class="right mono" style="font-weight: 700; color: #fff;">${{r.price.toFixed(2)}}</td>
+        <td>${{escapeHtml(r.book)}}</td>
+        <td style="font-weight: 700; font-family: 'JetBrains Mono', monospace; color: #fff;">${{escapeHtml(scoreDisplay)}}</td>
+        <td class="right">${{outcomeHtml}}</td>
       `;
       tbody.appendChild(tr);
     }});
