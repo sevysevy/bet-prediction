@@ -30,11 +30,11 @@ from maths import devig_multiplicative, compute_ev, kelly_fraction, compound_com
 import journal                                                  # noqa: E402
 try:
     from portals.portal1_double_tier import filter_portal_1
-    from portals.portal2_sharpe import filter_portal_2
+    from portals.portal2_sharpe import filter_portal_2, compute_bqi_metrics
     from portals.portal3_hard_filter import filter_portal_3
 except ImportError:
     from src.portals.portal1_double_tier import filter_portal_1
-    from src.portals.portal2_sharpe import filter_portal_2
+    from src.portals.portal2_sharpe import filter_portal_2, compute_bqi_metrics
     from src.portals.portal3_hard_filter import filter_portal_3
 
 MIN_PROB_LEG = 0.70
@@ -611,12 +611,22 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     Produit une Single Page Application moderne, responsive et réactive.
     Styles CSS modernes intégrés, interactions JavaScript vanille sans dépendance.
     """
+    # Enrichissement systématique de chaque sélection avec le score BQI et le grade
     if portal1 is None:
         portal1 = filter_portal_1(rows, arbitration="safest")
     if portal2 is None:
         portal2 = filter_portal_2(rows, top_n=35)
     if portal3 is None:
         portal3 = filter_portal_3(rows)
+
+    for dataset in (rows, portal1, portal2, portal3):
+        for r in dataset:
+            if "bet_quality_index" not in r or "bet_grade" not in r:
+                bqi_info = compute_bqi_metrics(float(r.get("prob") or 0.0), float(r.get("price") or 1.0), r.get("ev"))
+                r["bet_quality_index"] = bqi_info["bqi_score"]
+                r["bet_grade"] = bqi_info["grade"]
+                r["bqi_score"] = bqi_info["bqi_score"]
+                r["grade"] = bqi_info["grade"]
 
     leagues_seen = {}
     for r in rows:
@@ -874,6 +884,14 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     .badge-bqi-grade-bplus {{
       background: #f59e0b;
       color: #000;
+      font-weight: 800;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 10px;
+    }}
+    .badge-bqi-grade-b {{
+      background: #64748b;
+      color: #fff;
       font-weight: 800;
       padding: 1px 5px;
       border-radius: 4px;
@@ -1339,6 +1357,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
             <th class="right">Meilleure Cote</th>
             <th>Bookmaker</th>
             <th class="right">EV</th>
+            <th class="right">Score BQI</th>
             <th class="right">Kelly (1/4)</th>
             <th class="right">Action</th>
           </tr>
@@ -1363,6 +1382,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
             <th class="right">Cote Offerte</th>
             <th>Bookmaker</th>
             <th class="right">Edge / EV</th>
+            <th class="right">Score BQI</th>
             <th class="right">Mise Kelly Conseillée</th>
             <th class="right">Action</th>
           </tr>
@@ -1770,13 +1790,21 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       return `<span class="badge badge-tier-value">💎 Pépite Value</span>`;
     }} else if (r.tier === 'p3_elite') {{
       return `<span class="badge badge-p3-elite">🎯 Élite Sécuritaire</span>`;
-    }} else if (r.bet_quality_index !== undefined) {{
-      let gradeClass = 'badge-bqi-grade-bplus';
-      if (r.bet_grade === 'A+') gradeClass = 'badge-bqi-grade-aplus';
-      else if (r.bet_grade === 'A') gradeClass = 'badge-bqi-grade-a';
-      return `<span class="badge badge-bqi">⚡ BQI ${{r.bet_quality_index.toFixed(0)}}/100 <span class="${{gradeClass}}">${{escapeHtml(r.bet_grade || '')}}</span></span>`;
     }}
     return '';
+  }}
+
+  function renderBqiCell(r) {{
+    const bqi = (r.bet_quality_index !== undefined && r.bet_quality_index !== null) ? r.bet_quality_index : r.bqi_score;
+    const grade = r.bet_grade || r.grade;
+    if (bqi === undefined || bqi === null || bqi <= 0 || r.ev <= 0) {{
+      return '<span style="color: var(--text-muted); font-size: 12px;">—</span>';
+    }}
+    let gradeClass = 'badge-bqi-grade-bplus';
+    if (grade === 'A+') gradeClass = 'badge-bqi-grade-aplus';
+    else if (grade === 'A') gradeClass = 'badge-bqi-grade-a';
+    else if (grade === 'B') gradeClass = 'badge-bqi-grade-b';
+    return `<span class="badge badge-bqi mono"><strong>${{bqi.toFixed(0)}}</strong> <span class="${{gradeClass}}">${{escapeHtml(grade || '')}}</span></span>`;
   }}
 
   function applyFilters() {{
@@ -1894,7 +1922,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       else if (currentDateFilter === 'yesterday') dateLabel = "hier";
       else if (currentDateFilter === 'custom') dateLabel = customDateValue;
 
-      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 36px 20px;">
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted); padding: 36px 20px;">
         <div style="font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px;">Aucun match trouvé pour ${{dateLabel}}.</div>
         <div style="font-size: 13px;">Cliquez sur <a href="javascript:void(0)" onclick="setDateFilter('all')" style="color: var(--primary); font-weight: 600; text-decoration: underline;">🌐 Tous les jours</a> ou <a href="javascript:void(0)" onclick="setDateFilter('tomorrow')" style="color: var(--primary); font-weight: 600; text-decoration: underline;">⏩ Demain</a> pour voir les rencontres disponibles.</div>
       </td></tr>`;
@@ -1942,6 +1970,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
           <span style="font-size: 11px; color: var(--text-muted); margin-left: 4px;">(${{(r.book_margin * 100).toFixed(1)}}%)</span>
         </td>
         <td class="right"><span class="badge ${{evClass}} mono">${{r.ev >= 0 ? '+' : ''}}${{(r.ev * 100).toFixed(1)}}%</span></td>
+        <td class="right">${{renderBqiCell(r)}}</td>
         <td class="right mono" style="color: var(--text-muted);">${{r.kelly_quarter > 0 ? (r.kelly_quarter * 100).toFixed(1) + '%' : '—'}}</td>
         <td class="right">
           ${{r.status === 'FINISHED' ? `
@@ -2007,6 +2036,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
         <td class="right mono" style="font-weight: 700; color: #fff;">${{r.price.toFixed(2)}}</td>
         <td>${{escapeHtml(r.book)}}</td>
         <td class="right"><span class="badge badge-pos mono">+${{(r.ev * 100).toFixed(1)}}%</span></td>
+        <td class="right">${{renderBqiCell(r)}}</td>
         <td class="right mono" style="font-weight: 700; color: var(--success);">${{(r.kelly_quarter * 100).toFixed(1)}}% du capital</td>
         <td class="right">
           ${{r.status === 'FINISHED' ? `
@@ -2307,6 +2337,14 @@ def main():
             stats = {"total_signals": len(rows), "positive_ev_count": len([r for r in rows if r["ev"] > 0])}
     else:
         stats = {"total_signals": len(rows), "positive_ev_count": len([r for r in rows if r["ev"] > 0])}
+
+    for r in rows:
+        if "bet_quality_index" not in r or "bet_grade" not in r:
+            bqi_info = compute_bqi_metrics(float(r.get("prob") or 0.0), float(r.get("price") or 1.0), r.get("ev"))
+            r["bet_quality_index"] = bqi_info["bqi_score"]
+            r["bet_grade"] = bqi_info["grade"]
+            r["bqi_score"] = bqi_info["bqi_score"]
+            r["grade"] = bqi_info["grade"]
 
     portal1_rows = filter_portal_1(rows, arbitration="safest")
     portal2_rows = filter_portal_2(rows, top_n=35)

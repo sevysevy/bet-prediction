@@ -174,6 +174,10 @@ def compute_bet_quality_index(
     }
 
 
+# Alias pratique pour l'export et l'enrichissement externe
+compute_bqi_metrics = compute_bet_quality_index
+
+
 def get_match_key(sel: Dict[str, Any]) -> str:
     """
     Extrait une clé d'identification unique pour un match donné afin
@@ -312,6 +316,8 @@ def filter_portal_2(
         enriched["kelly_growth"] = metrics["kelly_growth"]
         enriched["bqi_score"] = bqi_score
         enriched["grade"] = grade
+        enriched["bet_quality_index"] = bqi_score
+        enriched["bet_grade"] = grade
 
         evaluated_candidates.append(enriched)
 
