@@ -276,11 +276,27 @@ def get(url, params, timeout=20, cache_ttl_s: int = 600):
         except Exception:
             pass
 
-    # Requête réseau
+    # Requête réseau avec extraction détaillée des erreurs
     req = urllib.request.Request(full_url, headers={"User-Agent": "bet-prediction/2.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        payload = json.loads(r.read().decode())
-        headers = dict(r.headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            payload = json.loads(r.read().decode())
+            headers = dict(r.headers)
+    except urllib.error.HTTPError as exc:
+        err_detail = ""
+        try:
+            raw_body = exc.read().decode("utf-8", errors="replace")
+            body_json = json.loads(raw_body)
+            if isinstance(body_json, dict):
+                err_detail = body_json.get("message") or (body_json.get("error", {}).get("message") if isinstance(body_json.get("error"), dict) else body_json.get("error"))
+            if not err_detail:
+                err_detail = raw_body[:160]
+        except Exception:
+            pass
+        msg = f"HTTP Error {exc.code}: {exc.reason}"
+        if err_detail:
+            msg += f" — Détail : {err_detail}"
+        raise RuntimeError(msg) from exc
 
     # Écriture dans le cache
     if cache_ttl_s > 0:

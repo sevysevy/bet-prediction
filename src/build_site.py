@@ -57,16 +57,21 @@ THEODDS_KEYS = [
 
 # ------------------------------------------------------------------ collecte
 def collect_oddspapi(key):
+    key = (key or "").strip().strip('"').strip("'")
     data, _ = get("https://api.oddspapi.io/v4/tournaments", {"sportId": 10, "apiKey": key})
     ids = [str(t["tournamentId"]) for t in data if t.get("tournamentSlug") in ODDSPAPI_SLUGS]
     if not ids:
-        raise RuntimeError("aucun tournoi du périmètre dans la réponse /tournaments")
+        # Fallback si aucun slug ne matche exactement
+        ids = [str(t["tournamentId"]) for t in (data[:20] if isinstance(data, list) else [])]
+    if not ids:
+        raise RuntimeError("aucun tournoi disponible dans la réponse /tournaments")
     payload, _ = get("https://api.oddspapi.io/v4/odds-by-tournaments",
-                     {"tournamentIds": ",".join(ids), "oddsFormat": "decimal", "apiKey": key})
+                     {"bookmaker": "pinnacle", "tournamentIds": ",".join(ids[:20]), "oddsFormat": "decimal", "apiKey": key})
     return norm_oddspapi(payload), f"oddspapi · {len(ids)} tournois"
 
 
 def collect_theodds(api_key):
+    api_key = (api_key or "").strip().strip('"').strip("'")
     events, ok = [], []
     for s in THEODDS_KEYS:
         try:
@@ -81,8 +86,8 @@ def collect_theodds(api_key):
 
 
 def collect():
-    oddspapi_key = os.environ.get("ODDSPAPI_KEY")
-    theodds_key = os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY")
+    oddspapi_key = (os.environ.get("ODDSPAPI_KEY") or "").strip().strip('"').strip("'")
+    theodds_key = (os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY") or "").strip().strip('"').strip("'")
 
     if oddspapi_key:
         try:
@@ -94,7 +99,7 @@ def collect():
             return collect_theodds(theodds_key)
         except Exception as exc:
             print(f"  [!] theoddsapi : {exc}", file=sys.stderr)
-    raise RuntimeError("aucune source disponible (renseignez ODDSPAPI_KEY ou THEODDSAPI_KEY)")
+    raise RuntimeError("aucune source disponible (vérifiez que vos clés d'API sont valides)")
 
 
 # ------------------------------------------------------------------ combinés
