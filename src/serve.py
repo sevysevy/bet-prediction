@@ -1,26 +1,40 @@
 #!/usr/bin/env python3
 """
-serve.py — service autonome : regenere la page et la sert, sans root et sans dependance.
+serve.py — Service autonome et API REST : sert l'application et expose les données.
 
-Aucun systemd, aucun caddy, aucun paquet a installer. Utile quand on n'a pas les droits
-root sur le VPS, ou quand systemd n'est pas disponible (conteneur).
-
-    python3 src/serve.py --port 8080 --every 3            # service permanent
-    python3 src/serve.py --port 8080 --once               # genere puis sort
-    python3 src/serve.py --port 8080 --every 3 --demo     # sans cle API
-
-Les cles sont lues dans l'environnement ou dans .env a la racine du projet.
+Zéro dépendance externe : uniquement la bibliothèque standard Python.
+Fonctionnalités :
+- Serveur HTTP asynchrone (ThreadingTCPServer)
+- Endpoints REST API :
+    GET  /api/v1/selections     -> Liste des sélections avec probabilités fair, cotes, EV et Kelly
+    GET  /api/v1/combos         -> Combinés multi-jambes optimisés
+    GET  /api/v1/stats          -> Statistiques du journal (nombre de signaux, EV moyen, CLV)
+    GET  /api/v1/journal        -> Derniers signaux enregistrés
+    POST /api/v1/refresh        -> Déclenche un rafraîchissement immédiat
+- Service des fichiers statiques (index.html, data.json)
+- Rafraîchissement automatique en arrière-plan à intervalle configurable
 """
 from __future__ import annotations
-import argparse, functools, http.server, os, socketserver, sys, threading, time, datetime
+import argparse
+import datetime
+import json
+import os
+import socketserver
+import sys
+import threading
+import time
+from http.server import SimpleHTTPRequestHandler
+from typing import Optional
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
+
 import build_site                                              # noqa: E402
+import journal                                                 # noqa: E402
 
 
-def charger_env(chemin=None):
-    """Charge .env sans dependance externe (n'ecrase pas l'environnement)."""
+def charger_env(chemin: Optional[str] = None) -> int:
+    """Charge les variables .env sans écraser l'environnement existant."""
     chemin = chemin or os.path.join(ROOT, ".env")
     if not os.path.exists(chemin):
         return 0
@@ -37,63 +51,148 @@ def charger_env(chemin=None):
     return n
 
 
-def generer(out, demo=False):
-    """Reutilise le generateur du projet. Ne leve jamais : renvoie (ok, message)."""
+def generer(out_path: str, demo: bool = False) -> tuple[bool, str]:
+    """Exécute la régénération du site et des données."""
     argv = sys.argv[:]
     try:
-        sys.argv = ["build_site.py", "--out", out] + (["--demo"] if demo else [])
+        sys.argv = ["build_site.py", "--out", out_path] + (["--demo"] if demo else [])
         build_site.main()
-        return True, f"page regeneree a {datetime.datetime.now():%H:%M:%S}"
+        return True, f"Régénération réussie à {datetime.datetime.now():%H:%M:%S}"
     except SystemExit:
-        return True, "page regeneree"
-    except Exception as exc:                                   # une panne ne doit pas tuer le service
-        return False, f"echec de generation : {exc}"
+        return True, "Régénération réussie"
+    except Exception as exc:
+        return False, f"Échec de régénération : {exc}"
     finally:
         sys.argv = argv
 
 
-class Handler(http.server.SimpleHTTPRequestHandler):
-    def log_message(self, fmt, *a):
-        sys.stderr.write(f"{self.address_string()} - {fmt % a}\n")
+class ModernAppHandler(SimpleHTTPRequestHandler):
+    """Handler HTTP servant l'API REST et les fichiers statiques."""
+
+    def __init__(self, *args, directory=None, out_dir=None, is_demo=False, **kwargs):
+        self.out_dir = out_dir or os.path.join(ROOT, "_site")
+        self.is_demo = is_demo
+        super().__init__(*args, directory=self.out_dir, **kwargs)
+
+    def _send_json(self, data: any, status_code: int = 200):
+        body = json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8")
+        self.send_response(status_code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path.startswith("/api/v1/refresh"):
+            out_file = os.path.join(self.out_dir, "index.html")
+            ok, msg = generer(out_file, self.is_demo)
+            self._send_json({"success": ok, "message": msg, "timestamp": datetime.datetime.now().isoformat()})
+        else:
+            self._send_json({"error": "Endpoint non trouvé"}, status_code=404)
+
+    def do_GET(self):
+        # Endpoints API
+        if self.path.startswith("/api/v1/"):
+            data_file = os.path.join(self.out_dir, "data.json")
+            cache = {}
+            if os.path.exists(data_file):
+                try:
+                    with open(data_file, "r", encoding="utf-8") as f:
+                        cache = json.load(f)
+                except Exception:
+                    pass
+
+            if self.path == "/api/v1/selections":
+                self._send_json(cache.get("selections", []))
+                return
+            elif self.path == "/api/v1/combos":
+                self._send_json(cache.get("combos", []))
+                return
+            elif self.path == "/api/v1/stats":
+                st = journal.get_stats()
+                self._send_json(st)
+                return
+            elif self.path == "/api/v1/journal":
+                recent = journal.get_recent_recommendations(limit=50)
+                self._send_json(recent)
+                return
+            elif self.path == "/api/v1/all":
+                self._send_json(cache)
+                return
+            else:
+                self._send_json({"error": "Route API inconnue"}, status_code=404)
+                return
+
+        # Fichiers statiques
+        super().do_GET()
 
     def end_headers(self):
-        self.send_header("Cache-Control", "public, max-age=300")
+        self.send_header("Cache-Control", "public, max-age=120")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         super().end_headers()
 
+    def log_message(self, fmt, *args):
+        # N'afficher que les requêtes importantes ou erreurs
+        if not self.path.startswith("/api/v1/stats"):
+            sys.stderr.write(f"[{datetime.datetime.now():%H:%M:%S}] {self.address_string()} - {fmt % args}\n")
 
-def boucle(out, minutes, demo):
+
+def background_loop(out_file: str, minutes: float, demo: bool):
+    """Boucle de rafraîchissement périodique."""
     while True:
         time.sleep(minutes * 60)
-        ok, msg = generer(out, demo)
-        print(f"[refresh] {msg}", flush=True)
+        ok, msg = generer(out_file, demo)
+        print(f"[auto-refresh] {msg}", flush=True)
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8080)))
-    ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--every", type=float, default=3, help="heures entre deux regenerations")
-    ap.add_argument("--out", default=os.path.join(ROOT, "_site"))
-    ap.add_argument("--demo", action="store_true")
-    ap.add_argument("--once", action="store_true", help="generer puis quitter (pas de serveur)")
+    ap = argparse.ArgumentParser(description="Serveur web et API REST bet-prediction")
+    ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8080)), help="Port d'écoute")
+    ap.add_argument("--host", default="0.0.0.0", help="Adresse d'écoute")
+    ap.add_argument("--every", type=float, default=3, help="Intervalle de rafraîchissement en heures")
+    ap.add_argument("--out", default=os.path.join(ROOT, "_site"), help="Répertoire du site")
+    ap.add_argument("--demo", action="store_true", help="Mode données simulées")
+    ap.add_argument("--once", action="store_true", help="Générer les fichiers et quitter")
     a = ap.parse_args()
 
     n = charger_env()
-    out_file = os.path.join(a.out, "index.html")
-    os.makedirs(a.out, exist_ok=True)
+    out_dir = os.path.abspath(a.out)
+    os.makedirs(out_dir, exist_ok=True)
+    out_file = os.path.join(out_dir, "index.html")
+
     ok, msg = generer(out_file, a.demo)
-    print(f"[init] {msg} ({n} cle(s) lue(s) depuis .env)", flush=True)
+    print(f"[init] {msg} ({n} clé(s) lue(s) dans .env)", flush=True)
+
     if a.once:
         return
+
     if a.every > 0:
-        threading.Thread(target=boucle, args=(out_file, a.every * 60, a.demo), daemon=True).start()
-    handler = functools.partial(Handler, directory=a.out)
+        threading.Thread(target=background_loop, args=(out_file, a.every * 60, a.demo), daemon=True).start()
+
+    def handler_factory(*args, **kwargs):
+        return ModernAppHandler(*args, out_dir=out_dir, is_demo=a.demo, **kwargs)
+
     socketserver.ThreadingTCPServer.allow_reuse_address = True
-    with socketserver.ThreadingTCPServer((a.host, a.port), handler) as srv:
-        print(f"[serve] http://{a.host}:{a.port}/  (regeneration toutes les {a.every} h)", flush=True)
-        srv.serve_forever()
+    with socketserver.ThreadingTCPServer((a.host, a.port), handler_factory) as srv:
+        print(f"[serve] Serveur prêt : http://localhost:{a.port}/", flush=True)
+        print(f"[serve] API REST : http://localhost:{a.port}/api/v1/selections", flush=True)
+        print(f"[serve] Rafraîchissement automatique toutes les {a.every} heures", flush=True)
+        try:
+            srv.serve_forever()
+        except KeyboardInterrupt:
+            print("\nArrêt du serveur.")
 
 
 if __name__ == "__main__":

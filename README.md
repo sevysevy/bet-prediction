@@ -1,18 +1,29 @@
-# Les plus probables
+# Les plus probables (Plateforme de Prédiction & Analyse de Marché)
 
-Page publique qui affiche, pour les matchs du jour, les sélections et les combinés **classés par
-probabilité de passer** — et, à côté de chaque ligne, l'**espérance de gain (EV)**.
+Plateforme moderne et rigoureuse qui affiche, pour les matchs du jour, les sélections et les combinés **classés par probabilité de passer** — accompagnés de l'**espérance de gain (EV)**, du **critère de Kelly fractionnaire** et du **suivi CLV (Closing Line Value)**.
 
-> Les « chances » affichées sont les probabilités du marché, marge du bookmaker retirée. **Ce ne sont
-> pas des pronostics.** Aucune performance n'est garantie.
+> Les « chances » affichées sont les probabilités du marché, marge du bookmaker retirée (dévigorisation sharp). **Ce ne sont pas des pronostics arbitraires.** Aucune performance n'est garantie.
+
+---
+
+## ⚡ Nouveautés de la version modernisée
+
+- 📱 **Interface Moderne & Réactive (SPA)** : Design dark/glassmorphism épuré, navigation par onglets, responsive mobile.
+- 🎯 **Onglet « Plus Probables »** : Tri par probabilité implicite fair dévigorisée.
+- 💎 **Onglet « Value Bets (EV > 0) »** : Détection des cotes battant le marché sharp, avec dimensionnement de mise Kelly.
+- 🔗 **Onglet « Combinés Optimisés »** : Combinés 2 à 4 jambes construits sur des matches indépendants avec cotes réelles chez un seul bookmaker.
+- 🎟️ **Simulateur de Coupon Interactif & Kelly** : Tiroir interactif permettant de sélectionner n'importe quel match, de calculer la probabilité composée, la cote cumulée, l'érosion de marge, et la mise exacte en euros selon le **Quarter-Kelly** ($f^*/4$) adapté à votre bankroll.
+- 📊 **Journal SQLite Append-Only & CLV** : Historisation automatique des signaux pour mesurer le **Closing Line Value (CLV)** et la calibration (RPS / Brier).
+- 🚀 **API REST intégrée** : Endpoints JSON (`/api/v1/selections`, `/api/v1/combos`, `/api/v1/stats`, `/api/v1/journal`, `/api/v1/refresh`).
+- 🛡️ **Cache local intelligent** : TTL de 10 min pour préserver les quotas d'API gratuits.
+- 🧪 **Suite de tests automatisée** : Validation unitaire mathématique et logique (`tests/test_all.py`).
+- ⚡ **Zéro dépendance npm ou externe** : 100% autonome sur la bibliothèque standard de Python 3.11+.
 
 ---
 
 ## Pourquoi deux chiffres au lieu d'un
 
-La « chance de passer » et la rentabilité évoluent **en sens inverse** : plus les jambes d'un combiné
-sont favorites, plus la probabilité de passer est élevée, et plus l'EV s'effondre, parce que la marge
-du bookmaker se compose avec le nombre de jambes.
+La « chance de passer » et la rentabilité évoluent **en sens inverse** : plus les jambes d'un combiné sont favorites, plus la probabilité de passer est élevée, et plus l'EV s'effondre, parce que la marge du bookmaker se compose avec le nombre de jambes.
 
 | Jambes | Chance de passer | Marge effective | EV (book à 6 %) |
 |---|---|---|---|
@@ -22,59 +33,23 @@ du bookmaker se compose avec le nombre de jambes.
 | 5 | 59,0 % | 26,6 % | −25,3 % |
 | 8 | 43,0 % | 39,0 % | −37,3 % |
 
-Une page qui n'afficherait que la chance de passer orienterait mécaniquement vers les paris les plus
-perdants. La colonne EV est donc le cœur du produit, pas un ornement.
+Une page qui n'afficherait que la chance de passer orienterait mécaniquement vers les paris les plus perdants. La colonne EV est donc le cœur du produit, pas un ornement.
 
-À l'inverse : si chaque jambe avait un **vrai** edge de +4 %, le combiné passerait à +4 % (1 jambe),
-+12,5 % (3), +21,7 % (5). Les combinés n'amplifient pas *mal* — ils amplifient.
+À l'inverse : si chaque jambe avait un **vrai** edge de +4 %, le combiné passerait à +4 % (1 jambe), +12,5 % (3), +21,7 % (5). Les combinés n'amplifient pas *mal* — ils amplifient.
 
 ---
 
 ## Comment ça marche
 
-Aucune donnée historique, aucun modèle entraîné. Les cotes **sont** les probabilités.
+Aucune donnée historique requise, aucun modèle complexe en boîte noire : **les cotes sont les probabilités**.
 
 ```
-① collecte   cotes du jour auprès d'une source (plusieurs books)
-② dévigorisation   p_fair = probabilité implicite normalisée   (jamais 1/cote brut : biaisé)
-③ classement   simples triés par p_fair, avec cote, book, fraîcheur, mise max, EV
-④ combinés   produit des p_fair, une seule jambe par match, cote prise chez UN SEUL book
-⑤ rendu   page HTML statique
-```
-
-**Zéro dépendance externe** : uniquement la bibliothèque standard de Python 3.11+. Le build tourne en
-quelques secondes et ne consomme quasiment rien — il tient sur un VPS à 4 Go sans difficulté.
-
-### La référence « sharp »
-
-Pour chaque événement, la référence est **le book à la marge la plus faible**, détecté
-automatiquement — plutôt qu'une liste de noms codée en dur (l'API publique de Pinnacle a fermé en
-juillet 2025). La marge de chaque book est affichée pour que le choix soit vérifiable.
-
----
-
-## Sources de cotes
-
-Les adaptateurs vivent dans `src/feeds.py`. La source est choisie selon les clés présentes.
-
-| Source | Variable | Tier gratuit | Coût d'une passe |
-|---|---|---|---|
-| [OddsPapi](https://oddspapi.io) | `ODDSPAPI_KEY` | 250 requêtes/mois | **1** — tout le board en un appel |
-| [The Odds API](https://the-odds-api.com) | `THEODDSAPI_KEY` | 500 crédits/mois | 8–24 — le coût est `marchés × régions` **par ligue** |
-| [pinnapi](https://pinnapi.com) | `PINNAPI_KEY` | 100 requêtes/jour | Pinnacle seul |
-
-**OddsPapi est la source recommandée** : une requête couvre tous les championnats, Pinnacle est inclus,
-et elle expose en plus la **limite de mise** par issue, l'**ancienneté** de chaque cote, la **ligne de
-clôture** (`/fixtures/odds/clv`) et les **résultats** (`/settlements`) — de quoi mesurer un edge réel
-plus tard sans construire de machinerie de collecte.
-
-Vérifier ce que tes clés donnent réellement :
-
-```bash
-export ODDSPAPI_KEY=...
-python3 src/feeds.py probe      # championnats, books sharp détectés, quota restant
-python3 src/feeds.py budget     # arithmétique de quota
-python3 src/feeds.py selftest   # teste les normaliseurs hors ligne
+① collecte         cotes du jour auprès d'une source (TheOddsAPI, OddsPapi, Pinnapi) avec cache TTL
+② dévigorisation   p_fair = probabilité implicite normalisée (ou modèle des puissances)
+③ classement       simples triés par p_fair, avec cote, book, fraîcheur, EV et Kelly
+④ combinés         produit des p_fair, une seule jambe par match, cote chez UN SEUL book
+⑤ journalisation   enregistrement dans data/journal.db (SQLite) pour suivi CLV
+⑥ rendu & API      page web moderne SPA et API REST JSON
 ```
 
 ---
@@ -82,90 +57,93 @@ python3 src/feeds.py selftest   # teste les normaliseurs hors ligne
 ## Lancer en local
 
 ```bash
-python3 src/build_site.py --demo --out site/index.html   # sans clé API
-export ODDSPAPI_KEY=...                                  # ou THEODDSAPI_KEY
-python3 src/build_site.py --out site/index.html
-python3 -m http.server -d site 8000                      # http://localhost:8000
+# 1. Génération statique (mode démo sans clé)
+python src/build_site.py --demo --out site/index.html
+
+# 2. Lancement du serveur complet (avec UI moderne + API REST)
+python src/serve.py --demo --port 8080
+
+# Ouvrir dans le navigateur :
+# Interface Web : http://localhost:8080/
+# API REST      : http://localhost:8080/api/v1/selections
+```
+
+### Avec clés API en direct :
+
+```bash
+export ODDSPAPI_KEY=...       # ou THEODDSAPI_KEY=...
+python src/build_site.py --out site/index.html
+python src/serve.py --port 8080 --every 3
 ```
 
 ---
 
-## Déploiement
+## API REST intégrée
 
-Dépôt **privé** — et GitHub Pages exige un compte **GitHub Pro** sur un dépôt privé. Le déploiement
-de référence est donc le **VPS**.
+Le serveur autonome `src/serve.py` expose les routes suivantes :
 
-### VPS (recommandé)
+| Méthode | Route | Description |
+|---|---|---|
+| `GET` | `/` | Interface web monopage (SPA réactive) |
+| `GET` | `/api/v1/selections` | Liste des sélections du jour (probabilités, cotes, EV, Kelly) |
+| `GET` | `/api/v1/combos` | Liste des combinés optimisés |
+| `GET` | `/api/v1/stats` | Métriques globales du journal SQLite (signaux, EV moyen, CLV) |
+| `GET` | `/api/v1/journal` | Derniers signaux enregistrés |
+| `GET` | `/api/v1/all` | Payload JSON complet |
+| `POST`| `/api/v1/refresh` | Déclenche un rafraîchissement immédiat des cotes |
+
+---
+
+## Tests automatisés
+
+Pour exécuter la suite de tests unitaires :
+
+```bash
+python -m unittest discover tests
+python src/feeds.py selftest
+```
+
+---
+
+## Structure du projet
+
+```
+src/
+├── maths.py         Moteur mathématique (dévigorisation, EV, critère de Kelly fractionnaire, combinés)
+├── journal.py       Journal SQLite append-only (enregistrement des signaux et calcul du CLV)
+├── feeds.py         Adaptateurs multi-sources (The Odds API, OddsPapi, Pinnapi), cache local et sonde
+├── build_site.py    Générateur de la SPA moderne et exportateur JSON
+└── serve.py         Serveur autonome HTTP + API REST sans dépendance
+tests/
+└── test_all.py      Suite complète de tests unitaires
+data/                Base SQLite locale (data/journal.db - ignorée par Git)
+deploy/              Scripts de déploiement VPS (systemd, start.sh, Caddyfile)
+docs/                Architecture scientifique, registre de preuve et décomposition
+```
+
+---
+
+## Déploiement VPS
+
+### Avec root & systemd :
 
 ```bash
 sudo REPO=https://github.com/sevysevy/bet-prediction.git bash deploy/install-vps.sh
 ```
 
-Le script clone le dépôt dans `/srv/bet-prediction`, installe la paire `systemd`
-(`bet-prediction-refresh.service` + `.timer`, régénération toutes les 3 h), pose le `Caddyfile` et
-démarre le service statique sur le port 8080.
-
-Au premier lancement il crée `/srv/bet-prediction/.env` en `chmod 600` puis s'arrête : **renseigne les
-clés, relance**. Les clés ne quittent jamais le VPS.
-
-Prérequis : `git`, `python3 >= 3.11`, `caddy`. Aucun paquet Python à installer.
-
-Le dépôt étant privé, le VPS a besoin d'un moyen d'authentification pour `git pull` : clé de
-déploiement en lecture (Settings → Deploy keys) ou jeton dans `~/.git-credentials`.
-
-### Sans root (systemd/caddy indisponibles)
-
-Sur un VPS sans accès root, en conteneur, ou sans systemd, le service est autonome :
+### Sans root (autonome) :
 
 ```bash
-./deploy/start.sh 8080     # demarre, regenere toutes les 3 h, sert la page
+./deploy/start.sh 8080
 ./deploy/stop.sh
 ```
-
-`src/serve.py` n'utilise que la bibliothèque standard : il génère la page, la sert, et la rafraîchit
-en tâche de fond. Aucun paquet à installer, aucun privilège requis. Le port par défaut est 8080 — pour
-exposer le site publiquement, ouvrir ce port dans le pare-feu du fournisseur ou placer un reverse
-proxy devant.
-
-### GitHub Pages (si tu passes en GitHub Pro)
-
-Le workflow Pages a été retiré pour ne pas laisser un job en échec. Si tu passes en Pro, il suffit de
-rajouter un job `deploy` qui publie `_site/` avec `actions/upload-pages-artifact` +
-`actions/deploy-pages`, et de mettre Pages en source « GitHub Actions ». `.github/workflows/ci.yml`
-continue de valider le code à chaque push.
-
-## Structure
-
-```
-src/feeds.py         adaptateurs multi-sources, dévigorisation, sonde, budget de quota
-src/build_site.py    générateur de la page
-src/serve.py         service autonome : génère, sert et rafraîchit (sans root)
-site/index.html      sortie générée (ignorée par git, servie localement)
-docs/                décomposition, architecture, spécification du MVP, registre de preuve
-deploy/              install-vps.sh (root/systemd), start.sh + stop.sh (sans root), Caddyfile
-```
-
-`.github/workflows/ci.yml` valide le code à chaque push (compilation, tests hors ligne, build de
-démonstration).
-
-`docs/` contient le travail de conception : `docs/01-architecture.md` (architecture cible complète),
-`docs/02-mvp.md` (spécification de cette page), et `docs/research/evidence-register.md` (les sources
-scientifiques et techniques qui fondent les choix).
 
 ---
 
 ## Ce que ce projet n'est pas
 
 - **Pas un service de pronostics.** Les probabilités viennent des cotes publiées par les opérateurs.
-- **Pas une promesse de rendement.** L'EV affichée est le plus souvent négative : c'est la marge du
-  bookmaker, et c'est la vérité du marché.
-- **Pas un outil de placement de paris.** Aucune API publique ne permet de placer un pari ; le
-  placement reste manuel.
+- **Pas une promesse de rendement.** L'EV affichée est le plus souvent négative : c'est la marge du bookmaker, et c'est la vérité du marché.
+- **Pas un outil de placement de paris.** Le placement reste manuel.
 
-Le pari comporte un risque de perte et un risque de dépendance. Jouez uniquement de l'argent dont vous
-n'avez pas besoin.
-
-## Licence
-
-Dépôt privé — **tous droits réservés**, voir `LICENSE`. À passer en MIT si le projet est un jour
-ouvert.
+Les paris d'argent comportent un risque de perte financière et d'addiction. Ne misez jamais d'argent dont vous avez besoin.

@@ -27,5 +27,9 @@ jobs:
       - name: Budget de quota
         run: python3 src/feeds.py budget
 
+      - name: Tests unitaires (moteur mathématique, feeds, journal)
+        run: python3 -m unittest discover tests
+
       - name: Build de la page (mode demonstration)
         run: python3 src/build_site.py --demo --out /tmp/_site/index.html
+

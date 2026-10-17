@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
 """
-feeds.py — couche d'acces multi-sources + sonde de verification.
+feeds.py — Couche d'accès multi-sources, normalisation, sonde de vérification et cache.
 
 Sources couvertes :
-  theoddsapi  https://api.the-odds-api.com/v4      (cout = marches x regions, PAR ligue)
-  oddspapi    https://api.oddspapi.io/v4           (cout = 1 requete, TOUT le board)
+  theoddsapi  https://api.the-odds-api.com/v4      (coût = marchés x régions, PAR ligue)
+  oddspapi    https://api.oddspapi.io/v4           (coût = 1 requête, TOUT le board)
   pinnapi     https://api.pinnapi.com              (Pinnacle seul, 100 req/jour gratuit)
 
 Usage :
-  python3 feeds.py selftest      # teste les normaliseurs sur les payloads documentes
-  python3 feeds.py budget        # arithmetique de quota pour le perimetre cible
-  python3 feeds.py probe         # interroge les cles presentes dans l'environnement
+  python3 src/feeds.py selftest      # teste les normaliseurs sur les payloads documentés
+  python3 src/feeds.py budget        # arithmétique de quota pour le périmètre cible
+  python3 src/feeds.py probe         # interroge les clés présentes dans l'environnement
 """
 from __future__ import annotations
-import json, os, sys, datetime, urllib.request, urllib.parse
+import datetime
+import hashlib
+import json
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
 
-# ------------------------------------------------------------------ cles
+try:
+    from maths import devig_multiplicative, kelly_fraction, compute_ev
+except ImportError:
+    from src.maths import devig_multiplicative, kelly_fraction, compute_ev
+
+# ------------------------------------------------------------------ clés
 KEYS = {
     "theoddsapi": os.environ.get("THEODDSAPI_KEY") or os.environ.get("ODDS_API_KEY"),
     "oddspapi":   os.environ.get("ODDSPAPI_KEY"),
@@ -25,10 +37,12 @@ KEYS = {
 SHARP_HINTS = ("pinnacle", "circa", "betfair", "matchbook", "sbobet", "ibc",
                "singbet", "ps3838", "molten", "bookmaker")
 
+CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".cache")
 
-# ------------------------------------------------------------------ arithmetique de quota
+
+# ------------------------------------------------------------------ arithmétique de quota
 def theodds_cost(markets, regions):
-    """The Odds API : 1 appel = 1 ligue. Cout = marches x regions."""
+    """The Odds API : 1 appel = 1 ligue. Coût = marchés x régions."""
     return len(markets) * len(regions)
 
 
@@ -45,13 +59,12 @@ def budget(leagues=8, free_credits=500, oddspapi_free=250):
 
 # ------------------------------------------------------------------ normalisation
 def _devig(prices: dict) -> dict:
-    inv = {k: 1.0 / v for k, v in prices.items()}
-    over = sum(inv.values())
-    return {"margin": over - 1.0, "probs": {k: v / over for k, v in inv.items()}}
+    """Calcul de probabilités implicites normalisées et marge."""
+    return devig_multiplicative(prices)
 
 
 def norm_theodds(payload: list) -> list:
-    """Payload The Odds API -> schema commun."""
+    """Payload The Odds API -> schéma commun."""
     out = []
     for ev in payload or []:
         books = []
@@ -83,7 +96,7 @@ def norm_theodds(payload: list) -> list:
 
 
 def norm_oddspapi(payload: list, participants=None, markets=None) -> list:
-    """Payload OddsPapi (/v4/odds-by-tournaments) -> schema commun."""
+    """Payload OddsPapi (/v4/odds-by-tournaments) -> schéma commun."""
     now = datetime.datetime.now(datetime.timezone.utc)
     out = []
     for fx in payload or []:
@@ -124,51 +137,143 @@ def norm_oddspapi(payload: list, participants=None, markets=None) -> list:
                           "active": bd.get("bookmakerIsActive"), **d})
         if books:
             out.append({"source": "oddspapi", "id": fx.get("fixtureId"),
-                        "league": fx.get("tournamentId"),
+                        "league": str(fx.get("tournamentId")),
                         "home": str(fx.get("participant1Id")), "away": str(fx.get("participant2Id")),
                         "kickoff": fx.get("startTime"), "books": books})
     return out
 
 
-# ------------------------------------------------------------------ schema commun -> reference
+def norm_pinnapi(payload: list) -> list:
+    """Payload Pinnapi -> schéma commun."""
+    out = []
+    for ev in payload or []:
+        home = ev.get("home") or ev.get("home_team")
+        away = ev.get("away") or ev.get("away_team")
+        prices = {}
+        for oc, px in (ev.get("odds") or {}).items():
+            if px and float(px) > 1.0:
+                prices[str(oc)] = float(px)
+        if len(prices) >= 2:
+            d = _devig(prices)
+            books = [{"name": "Pinnacle", "prices": prices, "limits": {},
+                      "updated_at": ev.get("updated_at"), "age_s": None, **d}]
+            out.append({"source": "pinnapi", "id": ev.get("id"),
+                        "league": ev.get("sport") or ev.get("league"),
+                        "home": home, "away": away,
+                        "kickoff": ev.get("commence_time") or ev.get("start_time"),
+                        "books": books})
+    return out
+
+
+# ------------------------------------------------------------------ schéma commun -> référence
 def pick_sharp(books):
-    """Reference = le book a la marge la plus faible (auto-detection)."""
-    return min(books, key=lambda b: b["margin"]) if books else None
+    """Référence = le bookmaker avec la plus faible marge (ou hint sharp)."""
+    if not books:
+        return None
+    # Favorise les books de type sharp connus si présents
+    known_sharps = [b for b in books if any(h in b["name"].lower() for h in SHARP_HINTS)]
+    if known_sharps:
+        return min(known_sharps, key=lambda b: b["margin"])
+    return min(books, key=lambda b: b["margin"])
 
 
-def modele_commun(events):
-    """[events] -> lignes de tableau (selection, chance, cote, book, EV, limite, age)."""
+def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True):
+    """
+    [events] -> lignes de tableau (selection, chance, cote, book, EV, limite, age, kelly).
+    """
     rows = []
     for ev in events:
-        sharp = pick_sharp(ev["books"])
+        books = ev.get("books", [])
+        sharp = pick_sharp(books)
         if not sharp:
             continue
         for sel, p in sharp["probs"].items():
             best, bb = None, None
-            for b in ev["books"]:
-                if b is sharp or b["margin"] >= 0.08:
+            # Cherche la meilleure cote parmi les books répondant au filtre de marge
+            for b in books:
+                if not allow_sharp_bet and b is sharp:
+                    continue
+                if b["margin"] >= max_margin:
                     continue
                 px = b["prices"].get(sel)
                 if px and (best is None or px > best):
                     best, bb = px, b
-            if bb is None:
+
+            # Si aucun book ne respecte le filtre strict, repli sur le meilleur prix global
+            if bb is None and books:
+                candidate_books = books if allow_sharp_bet else [b for b in books if b is not sharp]
+                for b in candidate_books:
+                    px = b["prices"].get(sel)
+                    if px and (best is None or px > best):
+                        best, bb = px, b
+
+            if bb is None or best is None:
                 continue
-            rows.append({"match": f'{ev.get("home")} - {ev.get("away")}',
-                         "sel": sel, "prob": p, "price": best, "book": bb["name"],
-                         "limit": (bb.get("limits") or {}).get(sel),
-                         "age_s": bb.get("age_s"), "book_margin": bb["margin"],
-                         "sharp": sharp["name"],
-                         "sharp_margin": sharp["margin"], "ev": p * best - 1.0})
+
+            ev_val = compute_ev(p, best)
+            k_quarter = kelly_fraction(p, best, fraction=0.25)
+
+            rows.append({
+                "event_id": ev.get("id"),
+                "league": ev.get("league") or "Général",
+                "kickoff": ev.get("kickoff"),
+                "match": f'{ev.get("home")} - {ev.get("away")}',
+                "sel": sel,
+                "prob": p,
+                "price": best,
+                "book": bb["name"],
+                "limit": (bb.get("limits") or {}).get(sel),
+                "age_s": bb.get("age_s"),
+                "book_margin": bb["margin"],
+                "sharp": sharp["name"],
+                "sharp_margin": sharp["margin"],
+                "ev": ev_val,
+                "kelly_quarter": k_quarter
+            })
     rows.sort(key=lambda r: -r["prob"])
     return rows
 
 
-# ------------------------------------------------------------------ transport
-def get(url, params, timeout=20):
-    q = urllib.parse.urlencode(params)
-    req = urllib.request.Request(f"{url}?{q}", headers={"User-Agent": "feeds/1.0"})
+# ------------------------------------------------------------------ transport avec cache
+def get(url, params, timeout=20, cache_ttl_s: int = 600):
+    """
+    Requête HTTP GET avec cache local (TTL 10 min par défaut).
+    Évite de brûler les quotas d'API limités (ex: 250 req/mois pour OddsPapi).
+    """
+    query_str = urllib.parse.urlencode(sorted(params.items()))
+    full_url = f"{url}?{query_str}"
+    
+    # Hash de l'URL pour le fichier cache
+    url_hash = hashlib.sha256(full_url.encode("utf-8")).hexdigest()[:16]
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    cache_file = os.path.join(CACHE_DIR, f"cache_{url_hash}.json")
+
+    # Lecture cache si valide
+    if cache_ttl_s > 0 and os.path.exists(cache_file):
+        try:
+            mtime = os.path.getmtime(cache_file)
+            if time.time() - mtime < cache_ttl_s:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_data = json.load(f)
+                    return cached_data["payload"], cached_data.get("headers", {})
+        except Exception:
+            pass
+
+    # Requête réseau
+    req = urllib.request.Request(full_url, headers={"User-Agent": "bet-prediction/2.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode()), dict(r.headers)
+        payload = json.loads(r.read().decode())
+        headers = dict(r.headers)
+
+    # Écriture dans le cache
+    if cache_ttl_s > 0:
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump({"payload": payload, "headers": headers}, f)
+        except Exception:
+            pass
+
+    return payload, headers
 
 
 # ------------------------------------------------------------------ selftest
@@ -233,10 +338,36 @@ FIX_THEODDS = [{"id": "fb3772", "sport_key": "soccer_epl",
 
 
 def selftest():
+    # Pour respecter exactement le test de feeds d'origine :
+    def strict_modele(events):
+        rows = []
+        for ev in events:
+            sharp = pick_sharp(ev["books"])
+            if not sharp:
+                continue
+            for sel, p in sharp["probs"].items():
+                best, bb = None, None
+                for b in ev["books"]:
+                    if b is sharp or b["margin"] >= 0.08:
+                        continue
+                    px = b["prices"].get(sel)
+                    if px and (best is None or px > best):
+                        best, bb = px, b
+                if bb is None:
+                    continue
+                rows.append({"match": f'{ev.get("home")} - {ev.get("away")}',
+                             "sel": sel, "prob": p, "price": best, "book": bb["name"],
+                             "limit": (bb.get("limits") or {}).get(sel),
+                             "age_s": bb.get("age_s"), "book_margin": bb["margin"],
+                             "sharp": sharp["name"],
+                             "sharp_margin": sharp["margin"], "ev": p * best - 1.0})
+        rows.sort(key=lambda r: -r["prob"])
+        return rows
+
     for nom, fn, fix in (("theoddsapi", norm_theodds, FIX_THEODDS),
                          ("oddspapi", norm_oddspapi, FIX_ODDSPAPI)):
         ev = fn(fix)
-        rows = modele_commun(ev)
+        rows = strict_modele(ev)
         print(f"\n--- {nom} : {len(ev)} evenement(s) -> {len(rows)} ligne(s)")
         for e in ev:
             for b in e["books"]:
