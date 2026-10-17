@@ -23,6 +23,7 @@ import socketserver
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import SimpleHTTPRequestHandler
 from typing import Optional
 
@@ -51,11 +52,14 @@ def charger_env(chemin: Optional[str] = None) -> int:
     return n
 
 
-def generer(out_path: str, demo: bool = False) -> tuple[bool, str]:
+def generer(out_path: str, demo: bool = False, force: bool = False) -> tuple[bool, str]:
     """Exécute la régénération du site et des données."""
     argv = sys.argv[:]
+    old_force = os.environ.get("FORCE_REFRESH")
     try:
-        sys.argv = ["build_site.py", "--out", out_path] + (["--demo"] if demo else [])
+        if force:
+            os.environ["FORCE_REFRESH"] = "1"
+        sys.argv = ["build_site.py", "--out", out_path] + (["--demo"] if demo else []) + (["--force"] if force else [])
         build_site.main()
         return True, f"Régénération réussie à {datetime.datetime.now():%H:%M:%S}"
     except SystemExit:
@@ -64,6 +68,37 @@ def generer(out_path: str, demo: bool = False) -> tuple[bool, str]:
         return False, f"Échec de régénération : {exc}"
     finally:
         sys.argv = argv
+        if old_force is not None:
+            os.environ["FORCE_REFRESH"] = old_force
+        elif "FORCE_REFRESH" in os.environ:
+            del os.environ["FORCE_REFRESH"]
+
+
+def _check_refresh_auth(headers, query_params) -> bool:
+    """
+    Vérifie l'autorisation d'actualisation manuelle via REFRESH_KEY (ou ADMIN_KEY).
+    Si aucune clé n'est définie dans l'environnement, l'actualisation est libre.
+    """
+    expected_key = (os.environ.get("REFRESH_KEY") or os.environ.get("ADMIN_KEY") or os.environ.get("SECRET_KEY") or "").strip()
+    if not expected_key:
+        return True
+    
+    # Vérification URL (?key=... ou ?token=...)
+    provided = query_params.get("key") or query_params.get("token") or ""
+    if provided == expected_key:
+        return True
+        
+    # Vérification Headers (X-Refresh-Key ou X-API-Key)
+    for h_name in ("x-refresh-key", "x-api-key"):
+        if headers.get(h_name, "").strip() == expected_key:
+            return True
+            
+    # Vérification Authorization: Bearer <key>
+    auth = headers.get("authorization", "")
+    if auth.startswith("Bearer ") and auth[7:].strip() == expected_key:
+        return True
+
+    return False
 
 
 class ModernAppHandler(SimpleHTTPRequestHandler):
@@ -81,7 +116,7 @@ class ModernAppHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Refresh-Key, Authorization")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(body)
@@ -90,20 +125,42 @@ class ModernAppHandler(SimpleHTTPRequestHandler):
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Refresh-Key, Authorization")
         self.end_headers()
+
+    def _handle_refresh(self, force: bool = True):
+        parsed = urllib.parse.urlparse(self.path)
+        q_params = dict(urllib.parse.parse_qsl(parsed.query))
+        
+        if not _check_refresh_auth(self.headers, q_params):
+            self._send_json({
+                "success": False,
+                "error": "Accès refusé : clé de rafraîchissement non valide ou manquante (?key=... ou header X-Refresh-Key)"
+            }, status_code=401)
+            return
+
+        out_file = os.path.join(self.out_dir, "index.html")
+        ok, msg = generer(out_file, self.is_demo, force=force)
+        self._send_json({
+            "success": ok,
+            "message": msg,
+            "forced": force,
+            "timestamp": datetime.datetime.now().isoformat()
+        }, status_code=200 if ok else 500)
 
     def do_POST(self):
         if self.path.startswith("/api/v1/refresh"):
-            out_file = os.path.join(self.out_dir, "index.html")
-            ok, msg = generer(out_file, self.is_demo)
-            self._send_json({"success": ok, "message": msg, "timestamp": datetime.datetime.now().isoformat()})
+            self._handle_refresh(force=True)
         else:
             self._send_json({"error": "Endpoint non trouvé"}, status_code=404)
 
     def do_GET(self):
         # Endpoints API
         if self.path.startswith("/api/v1/"):
+            if self.path.startswith("/api/v1/refresh"):
+                self._handle_refresh(force=True)
+                return
+
             data_file = os.path.join(self.out_dir, "data.json")
             cache = {}
             if os.path.exists(data_file):

@@ -391,10 +391,11 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
 
 
 # ------------------------------------------------------------------ transport avec cache
-def get(url, params, timeout=20, cache_ttl_s: int = 600):
+def get(url, params, timeout=20, cache_ttl_s: int = 600, force: bool = False):
     """
-    Requête HTTP GET avec cache local (TTL 10 min par défaut).
-    Évite de brûler les quotas d'API limités (ex: 250 req/mois pour OddsPapi).
+    Requête HTTP GET avec cache local (TTL configurable).
+    Évite de brûler les quotas d'API limités.
+    Le cache peut être contourné via force=True ou la variable d'environnement FORCE_REFRESH=1.
     """
     query_str = urllib.parse.urlencode(sorted(params.items()))
     full_url = f"{url}?{query_str}"
@@ -404,8 +405,9 @@ def get(url, params, timeout=20, cache_ttl_s: int = 600):
     os.makedirs(CACHE_DIR, exist_ok=True)
     cache_file = os.path.join(CACHE_DIR, f"cache_{url_hash}.json")
 
-    # Lecture cache si valide
-    if cache_ttl_s > 0 and os.path.exists(cache_file):
+    # Lecture cache si valide et si le rafraîchissement n'est pas forcé
+    force_pull = force or (os.environ.get("FORCE_REFRESH") or "").strip().lower() in ("1", "true", "yes")
+    if not force_pull and cache_ttl_s > 0 and os.path.exists(cache_file):
         try:
             mtime = os.path.getmtime(cache_file)
             if time.time() - mtime < cache_ttl_s:

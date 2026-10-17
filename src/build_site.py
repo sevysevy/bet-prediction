@@ -882,6 +882,28 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     .leg-item {{
       display: flex; justify-content: space-between; font-size: 13px; color: var(--text-muted);
     }}
+    .btn-refresh {{
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #e2e8f0;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
+    }}
+    .btn-refresh:hover {{
+      background: rgba(59, 130, 246, 0.25);
+      border-color: var(--primary);
+      color: #fff;
+    }}
+    .btn-refresh:active {{
+      transform: scale(0.96);
+    }}
 
     /* Bet Slip Floating Drawer */
     .slip-drawer {{
@@ -934,9 +956,12 @@ def generate_html(rows, combos, stats, source, demo, now_str):
           Probabilités de marché dévigorisées (référence sharp sans marge) · Comparaison des cotes & Espérance de Gain (EV).
         </p>
       </div>
-      <div style="text-align: right;">
-        <span class="badge badge-gray mono">Source: {html.escape(source)}</span>
-        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">Généré à {now_str}</div>
+      <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button id="btn-force-refresh" onclick="triggerManualRefresh()" class="btn-refresh" title="Forcer une actualisation manuelle immédiate sans cache">🔄 Actualiser</button>
+          <span class="badge badge-gray mono">Source: {html.escape(source)}</span>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted);">Généré à {now_str}</div>
       </div>
     </div>
   </header>
@@ -1656,9 +1681,38 @@ def generate_html(rows, combos, stats, source, demo, now_str):
     document.getElementById('bet-slip').classList.toggle('slip-collapsed');
   }}
 
-  function escapeHtml(str) {{
-    if (!str) return '';
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  async function triggerManualRefresh() {{
+    let key = localStorage.getItem('refresh_key');
+    if (!key) {{
+      key = prompt("Clé REFRESH_KEY configurée dans votre environnement (.env) :");
+      if (!key) return;
+      localStorage.setItem('refresh_key', key);
+    }}
+    const btn = document.getElementById('btn-force-refresh');
+    if (btn) {{
+      btn.innerText = "⏳ En cours...";
+      btn.disabled = true;
+    }}
+    try {{
+      const resp = await fetch(`/api/v1/refresh?key=${{encodeURIComponent(key)}}`, {{ method: 'POST' }});
+      const data = await resp.json();
+      if (resp.ok && data.success) {{
+        alert("✅ Actualisation forcée réussie ! Rechargement des données fraîches...");
+        window.location.reload();
+      }} else if (resp.status === 401) {{
+        localStorage.removeItem('refresh_key');
+        alert("❌ Clé REFRESH_KEY non valide.");
+      }} else {{
+        alert(`❌ Erreur : ${{data.message || data.error || 'Échec de rafraîchissement'}}`);
+      }}
+    }} catch (e) {{
+      alert(`❌ Erreur réseau : ${{e.message}}`);
+    }} finally {{
+      if (btn) {{
+        btn.innerText = "🔄 Actualiser";
+        btn.disabled = false;
+      }}
+    }}
   }}
 
   window.addEventListener('DOMContentLoaded', initApp);
@@ -1673,7 +1727,11 @@ def main():
     ap.add_argument("--out", default="_site/index.html", help="Chemin du fichier HTML de sortie")
     ap.add_argument("--demo", action="store_true", help="Utiliser le flux de démonstration")
     ap.add_argument("--no-journal", action="store_true", help="Ne pas consigner dans la base SQLite")
+    ap.add_argument("--force", action="store_true", help="Forcer une actualisation immédiate sans utiliser le cache")
     a = ap.parse_args()
+
+    if a.force:
+        os.environ["FORCE_REFRESH"] = "1"
 
     demo = a.demo
     if not demo:

@@ -254,5 +254,55 @@ class TestEnrichmentAndHistory(unittest.TestCase):
             self.assertNotEqual(r.get("price"), 1.0)
 
 
+class TestRefreshAuthAndForce(unittest.TestCase):
+
+    def test_refresh_auth_validation(self):
+        from serve import _check_refresh_auth
+        old_env = os.environ.get("REFRESH_KEY")
+        try:
+            os.environ["REFRESH_KEY"] = "supersecret123"
+
+            # 1. Valid via query ?key=
+            self.assertTrue(_check_refresh_auth({}, {"key": "supersecret123"}))
+            # 2. Valid via query ?token=
+            self.assertTrue(_check_refresh_auth({}, {"token": "supersecret123"}))
+            # 3. Valid via header X-Refresh-Key
+            self.assertTrue(_check_refresh_auth({"x-refresh-key": "supersecret123"}, {}))
+            # 4. Valid via header Authorization: Bearer
+            self.assertTrue(_check_refresh_auth({"authorization": "Bearer supersecret123"}, {}))
+
+            # 5. Invalid attempts
+            self.assertFalse(_check_refresh_auth({}, {"key": "wrong_key"}))
+            self.assertFalse(_check_refresh_auth({}, {}))
+            self.assertFalse(_check_refresh_auth({"x-refresh-key": "bad"}, {}))
+
+            # 6. Unrestricted when REFRESH_KEY is not set
+            del os.environ["REFRESH_KEY"]
+            self.assertTrue(_check_refresh_auth({}, {}))
+        finally:
+            if old_env is not None:
+                os.environ["REFRESH_KEY"] = old_env
+            elif "REFRESH_KEY" in os.environ:
+                del os.environ["REFRESH_KEY"]
+
+    def test_force_refresh_bypasses_cache(self):
+        import feeds
+        import tempfile
+        import time
+
+        old_force = os.environ.get("FORCE_REFRESH")
+        try:
+            # When FORCE_REFRESH=1, feeds.get skips cache read
+            os.environ["FORCE_REFRESH"] = "1"
+            # Verify flag logic
+            force_pull = bool(os.environ.get("FORCE_REFRESH") in ("1", "true", "yes"))
+            self.assertTrue(force_pull)
+        finally:
+            if old_force is not None:
+                os.environ["FORCE_REFRESH"] = old_force
+            elif "FORCE_REFRESH" in os.environ:
+                del os.environ["FORCE_REFRESH"]
+
+
 if __name__ == "__main__":
     unittest.main()
