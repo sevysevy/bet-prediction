@@ -97,9 +97,11 @@ def norm_theodds(payload: list) -> list:
                         p = float(o["price"])
                     except (KeyError, TypeError, ValueError):
                         continue
-                    if p > 1.0:
+                    if p > 1.01:
                         prices[o.get("name")] = p
-                if len(prices) < 2:
+                has_draw = any(o.get("name") == "Draw" for o in mk.get("outcomes", []))
+                req_outcomes = 3 if has_draw else 2
+                if len(prices) < req_outcomes:
                     continue
                 d = _devig(prices)
                 books.append({"name": b.get("title") or b.get("key"),
@@ -336,7 +338,26 @@ def modele_commun(events, max_margin: float = 0.08, allow_sharp_bet: bool = True
                 continue
 
             ev_val = compute_ev(p, best)
-            k_quarter = kelly_fraction(p, best, fraction=0.25)
+
+            # Contrôle de cohérence :
+            # 1. Les matches déjà commencés (LIVE) ne peuvent plus être pris en pré-match
+            # 2. Aucune vraie Value Bet dans le sport mondial ne dépasse +25% (au-delà, c'est un artefact)
+            now_utc = datetime.datetime.now(datetime.timezone.utc)
+            is_started = False
+            if ev.get("kickoff"):
+                try:
+                    dt = datetime.datetime.fromisoformat(ev["kickoff"].replace("Z", "+00:00"))
+                    if dt <= now_utc:
+                        is_started = True
+                except Exception:
+                    pass
+
+            if is_started or ev_val > 0.25:
+                ev_val = 0.0
+                k_quarter = 0.0
+            else:
+                k_quarter = kelly_fraction(p, best, fraction=0.25)
+
             lg_info = resolve_league(ev.get("league"), fallback_country=ev.get("category"))
 
             rows.append({
