@@ -631,6 +631,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
 
     app_data = {
         "generated_at": now_str,
+        "reference_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"),
         "source": source,
         "demo": demo,
         "stats": stats,
@@ -1244,19 +1245,19 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
 
   <!-- Tabs Navigation -->
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('probables')">
+    <button class="tab-btn active" id="tab-btn-probables" onclick="switchTab('probables', this)">
       🎯 Plus Probables <span class="tab-count" id="count-probables">{len(portal1)}</span>
     </button>
-    <button class="tab-btn" onclick="switchTab('value')">
+    <button class="tab-btn" id="tab-btn-value" onclick="switchTab('value', this)">
       💎 Value Bets (EV &gt; 0) <span class="tab-count" id="count-value">{len([r for r in portal1 if r['ev'] > 0])}</span>
     </button>
-    <button class="tab-btn" onclick="switchTab('combos')">
+    <button class="tab-btn" id="tab-btn-combos" onclick="switchTab('combos', this)">
       🔗 Combinés Filtrés <span class="tab-count">{len(combos)}</span>
     </button>
-    <button class="tab-btn" onclick="switchTab('journal')">
+    <button class="tab-btn" id="tab-btn-journal" onclick="switchTab('journal', this)">
       📊 Résultats & Bilan <span class="tab-count" id="count-journal-finished">{len([r for r in rows if r.get('status') == 'FINISHED'])}</span>
     </button>
-    <button class="tab-btn" onclick="switchTab('methodo')">
+    <button class="tab-btn" id="tab-btn-methodo" onclick="switchTab('methodo', this)">
       ℹ️ Méthodologie & Risque
     </button>
   </div>
@@ -1585,27 +1586,50 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     }});
   }}
 
-  function switchTab(tabId) {{
+  function switchTab(tabId, el) {{
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
     
-    event.currentTarget.classList.add('active');
-    document.getElementById('tab-' + tabId).style.display = 'block';
+    let targetBtn = el;
+    if (!targetBtn && typeof event !== 'undefined' && event) {{
+      targetBtn = event.currentTarget || (event.target ? event.target.closest('.tab-btn') : null);
+    }}
+    if (!targetBtn) {{
+      targetBtn = document.getElementById('tab-btn-' + tabId) || document.querySelector(`.tab-btn[onclick*="${{tabId}}"]`);
+    }}
+    if (targetBtn && targetBtn.classList) {{
+      targetBtn.classList.add('active');
+    }}
+
+    const content = document.getElementById('tab-' + tabId);
+    if (content) content.style.display = 'block';
 
     const filterBar = document.getElementById('filter-bar');
     const dateBar = document.getElementById('date-bar');
     const finishedHint = document.getElementById('finished-filter-hint');
     if (tabId === 'probables' || tabId === 'value') {{
-      filterBar.style.display = 'flex';
+      if (filterBar) filterBar.style.display = 'flex';
       if (dateBar) dateBar.style.display = 'flex';
     }} else {{
-      filterBar.style.display = 'none';
+      if (filterBar) filterBar.style.display = 'none';
       if (dateBar) dateBar.style.display = 'none';
       if (finishedHint) finishedHint.style.display = 'none';
     }}
     if (tabId === 'journal') {{
       renderJournalTable();
     }}
+  }}
+
+  function getReferenceNow() {{
+    if (window.APP_DATA && window.APP_DATA.reference_date) {{
+      try {{
+        const parts = window.APP_DATA.reference_date.split('-');
+        if (parts.length === 3) {{
+          return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        }}
+      }} catch (e) {{}}
+    }}
+    return new Date();
   }}
 
   function formatDateLocal(d) {{
@@ -1661,7 +1685,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
 
   function updateDateCounts() {{
     const items = getPortalItems();
-    const now = new Date();
+    const now = getReferenceNow();
     const todayStr = formatDateLocal(now);
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -1697,7 +1721,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     try {{
       const d = new Date(isoStr);
       if (isNaN(d.getTime())) return '';
-      const now = new Date();
+      const now = getReferenceNow();
       const isToday = d.toDateString() === now.toDateString();
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -1763,9 +1787,40 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     const statusFilter = document.getElementById('status-filter')?.value;
     const sortBy = document.getElementById('sort-selector').value;
 
-    let items = [...getPortalItems()];
+    // 1. Déterminer la source de base selon le statut global ou le portail
+    let items = [];
+    const finishedHint = document.getElementById('finished-filter-hint');
+    if (statusFilter === 'FINISHED_ALL') {{
+      items = (window.APP_DATA.selections || []).filter(r => r.status === 'FINISHED');
+      if (finishedHint) {{
+        finishedHint.style.display = 'block';
+        finishedHint.innerHTML = `🏁 Affichage de l'ensemble des <strong>${{items.length}} matchs terminés</strong> (toutes ligues et flux bookmakers confondus).`;
+      }}
+    }} else {{
+      items = [...getPortalItems()];
+      if (statusFilter === 'FINISHED') {{
+        items = items.filter(r => r.status === 'FINISHED');
+        const allFinishedCount = (window.APP_DATA.selections || []).filter(r => r.status === 'FINISHED').length;
+        if (finishedHint) {{
+          finishedHint.style.display = 'block';
+          if (currentPortal !== 'all') {{
+            finishedHint.innerHTML = `🏁 <strong>${{items.length}} match(s) terminé(s)</strong> qualifié(s) par les critères stricts de ce portail. <a href="javascript:void(0)" onclick="document.getElementById('status-filter').value='FINISHED_ALL'; applyFilters();" style="color: var(--primary); text-decoration: underline; margin-left: 6px; font-weight: 600;">Voir les ${{allFinishedCount}} matchs terminés du jour (Toutes ligues) &rarr;</a>`;
+          }} else {{
+            finishedHint.innerHTML = `🏁 <strong>${{items.length}} matchs terminés</strong> affichés.`;
+          }}
+        }}
+      }} else {{
+        if (finishedHint) finishedHint.style.display = 'none';
+        if (statusFilter === 'WON' || statusFilter === 'LOST') {{
+          items = items.filter(r => r.outcome === statusFilter);
+        }} else if (statusFilter) {{
+          items = items.filter(r => r.status === statusFilter);
+        }}
+      }}
+    }}
 
-    const now = new Date();
+    // 2. Filtre de Date (s'applique de façon uniforme à items)
+    const now = getReferenceNow();
     const todayStr = formatDateLocal(now);
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
@@ -1784,6 +1839,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       items = items.filter(r => getEventDateStr(r.kickoff) === customDateValue);
     }}
 
+    // 3. Autres filtres (query, market, league, odds)
     if (query) {{
       items = items.filter(r => (r.match + ' ' + r.sel + ' ' + (r.market_type || '')).toLowerCase().includes(query));
     }}
@@ -1792,33 +1848,6 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     }}
     if (league) {{
       items = items.filter(r => r.league === league);
-    }}
-    const finishedHint = document.getElementById('finished-filter-hint');
-    if (statusFilter === 'FINISHED_ALL') {{
-      items = (window.APP_DATA.selections || []).filter(r => r.status === 'FINISHED');
-      if (finishedHint) {{
-        finishedHint.style.display = 'block';
-        finishedHint.innerHTML = `🏁 Affichage de l'ensemble des <strong>${{items.length}} matchs terminés</strong> (toutes ligues et flux bookmakers confondus).`;
-      }}
-    }} else if (statusFilter === 'FINISHED') {{
-      items = items.filter(r => r.status === 'FINISHED');
-      const allFinishedCount = (window.APP_DATA.selections || []).filter(r => r.status === 'FINISHED').length;
-      if (finishedHint) {{
-        finishedHint.style.display = 'block';
-        if (currentPortal !== 'all') {{
-          finishedHint.innerHTML = `🏁 <strong>${{items.length}} match(s) terminé(s)</strong> qualifié(s) par les critères stricts de ce portail. <a href="javascript:void(0)" onclick="document.getElementById('status-filter').value='FINISHED_ALL'; applyFilters();" style="color: var(--primary); text-decoration: underline; margin-left: 6px; font-weight: 600;">Voir les ${{allFinishedCount}} matchs terminés du jour (Toutes ligues) &rarr;</a>`;
-        }} else {{
-          finishedHint.innerHTML = `🏁 <strong>${{items.length}} matchs terminés</strong> affichés.`;
-        }}
-      }}
-    }} else {{
-      if (finishedHint) finishedHint.style.display = 'none';
-      if (statusFilter === 'WON' || statusFilter === 'LOST') {{
-        const portalMatches = items.filter(r => r.outcome === statusFilter);
-        items = portalMatches.length > 0 ? portalMatches : (window.APP_DATA.selections || []).filter(r => r.outcome === statusFilter);
-      }} else if (statusFilter) {{
-        items = items.filter(r => r.status === statusFilter);
-      }}
     }}
     if (oddsGroup === 'low') {{
       items = items.filter(r => r.price < 1.30);
@@ -1858,6 +1887,19 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
   function renderProbablesTable(rows) {{
     const tbody = document.getElementById('table-probables-body');
     tbody.innerHTML = '';
+    if (rows.length === 0) {{
+      let dateLabel = "ce filtre";
+      if (currentDateFilter === 'today') dateLabel = "aujourd'hui";
+      else if (currentDateFilter === 'tomorrow') dateLabel = "demain";
+      else if (currentDateFilter === 'yesterday') dateLabel = "hier";
+      else if (currentDateFilter === 'custom') dateLabel = customDateValue;
+
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 36px 20px;">
+        <div style="font-size: 15px; font-weight: 600; color: #fff; margin-bottom: 6px;">Aucun match trouvé pour ${{dateLabel}}.</div>
+        <div style="font-size: 13px;">Cliquez sur <a href="javascript:void(0)" onclick="setDateFilter('all')" style="color: var(--primary); font-weight: 600; text-decoration: underline;">🌐 Tous les jours</a> ou <a href="javascript:void(0)" onclick="setDateFilter('tomorrow')" style="color: var(--primary); font-weight: 600; text-decoration: underline;">⏩ Demain</a> pour voir les rencontres disponibles.</div>
+      </td></tr>`;
+      return;
+    }}
     rows.forEach(r => {{
       const tr = document.createElement('tr');
       const evClass = r.ev >= 0 ? 'badge-pos' : r.ev > -0.06 ? 'badge-warn' : 'badge-neg';
