@@ -1181,9 +1181,70 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
     .edu-card h3 {{ font-size: 16px; margin-bottom: 8px; color: var(--primary); }}
     .edu-card p {{ font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 8px; }}
 
+    /* Event Details & Computation Modal */
+    .modal-backdrop {{
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(3, 7, 18, 0.8); backdrop-filter: blur(5px);
+      z-index: 10000; display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+    }}
+    .modal-card {{
+      background: #0f172a; border: 1px solid #334155; border-radius: 16px;
+      width: 100%; max-width: 950px; max-height: 90vh; display: flex;
+      flex-direction: column; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.85);
+      overflow: hidden; animation: modalFadeIn 0.2s ease-out;
+    }}
+    @keyframes modalFadeIn {{
+      from {{ opacity: 0; transform: scale(0.97) translateY(8px); }}
+      to {{ opacity: 1; transform: scale(1) translateY(0); }}
+    }}
+    .modal-header {{
+      background: #1e293b; padding: 14px 20px; display: flex;
+      justify-content: space-between; align-items: center; border-bottom: 1px solid #334155;
+    }}
+    .btn-close-modal {{
+      background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #94a3b8; font-size: 20px; line-height: 1; cursor: pointer;
+      width: 32px; height: 32px; border-radius: 8px; display: inline-flex;
+      align-items: center; justify-content: center; transition: all 0.15s ease;
+    }}
+    .btn-close-modal:hover {{ color: #fff; background: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.5); }}
+    .modal-body {{
+      padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px;
+    }}
+    .calc-step-card {{
+      background: #111827; border: 1px solid #1e293b; border-radius: 12px;
+      padding: 16px 18px;
+    }}
+    .calc-step-title {{
+      font-size: 13.5px; font-weight: 700; color: var(--primary); margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }}
+    .calc-grid {{
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px;
+    }}
+    .calc-box {{
+      background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px; padding: 10px 12px;
+    }}
+    .calc-box-label {{ font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }}
+    .calc-box-val {{ font-size: 15px; font-weight: 700; color: #fff; font-family: 'JetBrains Mono', monospace; }}
+    .match-link {{
+      color: #fff; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+      transition: color 0.15s ease;
+    }}
+    .match-link:hover {{ color: var(--primary); text-decoration: underline; }}
+    .btn-details-pill {{
+      font-size: 10.5px; color: var(--primary); background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 4px; padding: 1px 6px;
+      font-weight: 600; cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px;
+    }}
+    .btn-details-pill:hover {{ background: var(--primary); color: #fff; }}
+
     @media (max-width: 768px) {{
       .slip-drawer {{ width: calc(100vw - 32px); right: 16px; bottom: 16px; }}
       .stats-bar {{ grid-template-columns: 1fr 1fr; }}
+      .modal-card {{ max-height: 95vh; }}
     }}
   </style>
 </head>
@@ -1347,6 +1408,13 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       <option value="low">Favoris lourds (Cote &lt; 1.30)</option>
       <option value="mid">Favoris moyens (1.30 - 1.80)</option>
       <option value="high">Outsiders (&gt; 1.80)</option>
+    <select class="select-dropdown" id="prob-filter" onchange="applyFilters()">
+      <option value="0">Toutes les probabilités</option>
+      <option value="0.50">Chance ≥ 50%</option>
+      <option value="0.60">🎯 Forte Chance (≥ 60%)</option>
+      <option value="0.70">🛡️ Haute Sécurité (≥ 70%)</option>
+      <option value="0.75">🏰 Coffre-Fort (≥ 75%)</option>
+      <option value="0.80">💎 Quasi-Certain (≥ 80%)</option>
     </select>
     <select class="select-dropdown" id="status-filter" onchange="applyFilters()">
       <option value="">Tous les statuts</option>
@@ -1578,6 +1646,21 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
           <b class="mono" style="color: #38bdf8;" id="slip-potential-payout">+0 XAF</b>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Event Details & Computation Modal -->
+<div id="event-modal-backdrop" class="modal-backdrop" onclick="closeEventModal(event)" style="display: none;">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div id="modal-match-header-info">
+        <!-- Rempli dynamiquement -->
+      </div>
+      <button type="button" class="btn-close-modal" onclick="closeEventModal()" title="Fermer (Échap)">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-match-body">
+      <!-- Rempli dynamiquement -->
     </div>
   </div>
 </div>
@@ -1937,6 +2020,11 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       items = items.filter(r => r.price > 1.80);
     }}
 
+    const minProb = parseFloat(document.getElementById('prob-filter')?.value || 0);
+    if (minProb > 0) {{
+      items = items.filter(r => r.prob >= minProb);
+    }}
+
     if (sortBy === 'prob-desc') {{
       items.sort((a, b) => b.prob - a.prob);
     }} else if (sortBy === 'bqi-desc') {{
@@ -1996,7 +2084,10 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
           </div>
         </td>
         <td style="font-weight: 600;">
-          <div>${{escapeHtml(r.match)}}</div>
+          <div class="match-link" data-match="${{escapeHtml(r.match)}}" data-sel="${{escapeHtml(r.sel)}}" onclick="openEventDetails(this.getAttribute('data-match'), this.getAttribute('data-sel'))" title="Cliquer pour voir le détail des calculs et tous les marchés de ce match">
+            <span>${{escapeHtml(r.match)}}</span>
+            <span class="btn-details-pill">🔍 Marchés</span>
+          </div>
           <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
             <span style="font-size: 11px; color: var(--text-muted);">${{formatKickoff(r.kickoff)}}</span>
             ${{renderStatusBadge(r)}}
@@ -2070,7 +2161,10 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
           </div>
         </td>
         <td style="font-weight: 600;">
-          <div>${{escapeHtml(r.match)}}</div>
+          <div class="match-link" data-match="${{escapeHtml(r.match)}}" data-sel="${{escapeHtml(r.sel)}}" onclick="openEventDetails(this.getAttribute('data-match'), this.getAttribute('data-sel'))" title="Cliquer pour voir le détail des calculs et tous les marchés de ce match">
+            <span>${{escapeHtml(r.match)}}</span>
+            <span class="btn-details-pill">🔍 Marchés</span>
+          </div>
           <div style="display: flex; align-items: center; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
             <span style="font-size: 11px; color: var(--text-muted);">${{formatKickoff(r.kickoff)}}</span>
             ${{renderStatusBadge(r)}}
@@ -2330,6 +2424,191 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       if (payoutRow) payoutRow.style.display = 'none';
     }}
   }}
+
+  // --- Event Details & Computation Modal ---
+  function openEventDetails(matchName, selName) {{
+    const all = window.APP_DATA.selections || [];
+    const matchSels = all.filter(s => s.match === matchName);
+    if (matchSels.length === 0) return;
+
+    let targetSel = matchSels.find(s => s.sel === selName) || matchSels[0];
+
+    const modalBackdrop = document.getElementById('event-modal-backdrop');
+    const headerInfo = document.getElementById('modal-match-header-info');
+    const modalBody = document.getElementById('modal-match-body');
+    if (!modalBackdrop || !headerInfo || !modalBody) return;
+
+    headerInfo.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 10px;">
+        ${{targetSel.badge_url ? `<img src="${{targetSel.badge_url}}" width="28" height="20" style="border-radius: 4px; object-fit: cover;" onerror="this.style.display='none'">` : ''}}
+        <div>
+          <div style="font-size: 18px; font-weight: 800; color: #fff;">${{escapeHtml(matchName)}}</div>
+          <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px; margin-top: 3px; flex-wrap: wrap;">
+            <span>${{targetSel.flag || '⚽'}} ${{escapeHtml(targetSel.country || '')}} · ${{escapeHtml(targetSel.league || '')}}</span>
+            <span>·</span>
+            <span>${{formatKickoff(targetSel.kickoff)}}</span>
+            ${{renderStatusBadge(targetSel)}}
+          </div>
+        </div>
+      </div>
+    `;
+
+    const p = targetSel.prob || 0.5;
+    const price = targetSel.price || 1.0;
+    const ev = targetSel.ev !== undefined ? targetSel.ev : ((p * price) - 1.0);
+    const bookMargin = targetSel.book_margin || 0.05;
+    const b = price - 1.0;
+    const q = 1.0 - p;
+    const fStar = b > 0 ? (p * b - q) / b : 0;
+    const sigma = Math.sqrt(p * q) * b;
+    const sharpe = sigma > 0 ? (ev / sigma) : 0;
+
+    const evPercent = (ev * 100).toFixed(1);
+    const evColor = ev >= 0 ? 'var(--success)' : (ev > -0.06 ? 'var(--warning)' : 'var(--danger)');
+
+    let htmlContent = `
+      <!-- Bloc 1 : Décorticage Mathématique du Pronostic Recommandé -->
+      <div class="calc-step-card">
+        <div class="calc-step-title">
+          <span>🧮 Décorticage Mathématique du Pronostic : <strong style="color: #fff;">${{escapeHtml(targetSel.sel)}}</strong></span>
+          <span style="margin-left: auto;">${{renderBqiCell(targetSel)}}</span>
+        </div>
+        <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.5;">
+          Cotation de référence issue de bookmakers liquides (Pinnacle/sharp). La marge moyenne (${{(bookMargin * 100).toFixed(1)}}%) a été neutralisée pour déterminer la probabilité réelle sans biais de commission.
+        </p>
+        
+        <div class="calc-grid">
+          <div class="calc-box">
+            <div class="calc-box-label">Cote Proposée</div>
+            <div class="calc-box-val" style="color: #fff;">${{price.toFixed(2)}}</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">Book: ${{escapeHtml(targetSel.book || 'Pinnacle')}}</div>
+          </div>
+          <div class="calc-box">
+            <div class="calc-box-label">Probabilité Sharp Dévigorée</div>
+            <div class="calc-box-val" style="color: var(--primary);">${{(p * 100).toFixed(1)}}%</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">Cote équitable pure : ${{p > 0 ? (1/p).toFixed(2) : '—'}}</div>
+          </div>
+          <div class="calc-box">
+            <div class="calc-box-label">Espérance Mathématique (EV)</div>
+            <div class="calc-box-val" style="color: ${{evColor}};">${{ev >= 0 ? '+' : ''}}${{evPercent}}%</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">Formule : (p × cote) - 1</div>
+          </div>
+          <div class="calc-box">
+            <div class="calc-box-label">Volatilité / Risque (σ)</div>
+            <div class="calc-box-val">${{sigma.toFixed(3)}}</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">Écart-type du rendement</div>
+          </div>
+          <div class="calc-box">
+            <div class="calc-box-label">Ratio de Sharpe Sportif</div>
+            <div class="calc-box-val">${{sharpe.toFixed(3)}}</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">Rendement ajusté au risque</div>
+          </div>
+          <div class="calc-box">
+            <div class="calc-box-label">Mise Kelly (1/2 Pro)</div>
+            <div class="calc-box-val" style="color: var(--success);">${{fStar > 0 ? (fStar * 50).toFixed(1) + '%' : '0%'}}</div>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">1/4 Kelly : ${{fStar > 0 ? (fStar * 25).toFixed(1) + '%' : '0%'}}</div>
+          </div>
+        </div>
+
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px dashed rgba(255,255,255,0.08); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+          <div style="font-size: 12px; color: #cbd5e1;">
+            ${{p >= 0.70 
+              ? '<span style="color: #34d399; font-weight: 600;">🛡️ Haute Probabilité (≥ 70%) :</span> Hit rate très élevé, élimine les séries de pertes.'
+              : p >= 0.60
+              ? '<span style="color: #60a5fa; font-weight: 600;">🎯 Équilibré (≥ 60%) :</span> Bon compromis sécurité et valeur.'
+              : '<span style="color: #fbbf24; font-weight: 600;">💎 Value Bet :</span> Avantage mathématique net avec variance à surveiller.'
+            }}
+          </div>
+          <button class="btn-add" onclick='toggleSlipItem(${{JSON.stringify(targetSel)}}); updateModalButton(this, ${{JSON.stringify(targetSel)}})'>
+            ${{slipSelections.some(s => s.match === targetSel.match && s.sel === targetSel.sel) ? '✓ Ajouté au Coupon' : '+ Ajouter ce Pronostic'}}
+          </button>
+        </div>
+      </div>
+
+      <!-- Bloc 2 : Tous les Autres Marchés Disponibles sur ce Match -->
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+          <h3 style="font-size: 15px; color: #fff; font-weight: 700;">📋 Tous les Marchés Disponibles pour ce Match (${{matchSels.length}})</h3>
+          <span style="font-size: 11.5px; color: var(--text-muted);">Cliquez sur n'importe quel marché pour l'ajouter ou le combiner</span>
+        </div>
+        <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Type de Marché</th>
+                <th>Option / Pronostic</th>
+                <th class="right">Cote</th>
+                <th class="right">Chance Réelle</th>
+                <th class="right">Edge (EV)</th>
+                <th class="right">Score BQI</th>
+                <th class="right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+    `;
+
+    const sortedMarketSels = [...matchSels].sort((a, b) => b.prob - a.prob);
+
+    sortedMarketSels.forEach(ms => {{
+      const msEv = ms.ev !== undefined ? ms.ev : ((ms.prob * ms.price) - 1.0);
+      const msEvClass = msEv >= 0 ? 'badge-pos' : msEv > -0.06 ? 'badge-warn' : 'badge-neg';
+      const inSlip = slipSelections.some(s => s.match === ms.match && s.sel === ms.sel);
+      const isTarget = ms.sel === targetSel.sel;
+
+      htmlContent += `
+        <tr style="${{isTarget ? 'background: rgba(59, 130, 246, 0.08);' : ''}}">
+          <td><span class="badge badge-market">${{escapeHtml(ms.market_type || 'Général')}}</span></td>
+          <td style="color: #fff; font-weight: 600;">
+            ${{escapeHtml(ms.sel)}}
+            ${{isTarget ? '<span style="font-size: 10px; color: var(--primary); margin-left: 6px;">(Sélectionné)</span>' : ''}}
+          </td>
+          <td class="right mono" style="font-weight: 700; color: #fff;">${{ms.price.toFixed(2)}}</td>
+          <td class="right mono" style="color: ${{ms.prob >= 0.70 ? 'var(--success)' : (ms.prob >= 0.60 ? 'var(--primary)' : '#e2e8f0')}}; font-weight: 700;">
+            ${{(ms.prob * 100).toFixed(1)}}%
+          </td>
+          <td class="right"><span class="badge ${{msEvClass}} mono">${{msEv >= 0 ? '+' : ''}}${{(msEv * 100).toFixed(1)}}%</span></td>
+          <td class="right">${{renderBqiCell(ms)}}</td>
+          <td class="right">
+            <button class="btn-add ${{inSlip ? 'in-slip' : ''}}" onclick='toggleSlipItem(${{JSON.stringify(ms)}}); updateModalButton(this, ${{JSON.stringify(ms)}})'>
+              ${{inSlip ? '✓ Ajouté' : '+ Coupon'}}
+            </button>
+          </td>
+        </tr>
+      `;
+    }});
+
+    htmlContent += `
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    modalBody.innerHTML = htmlContent;
+    modalBackdrop.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }}
+
+  function updateModalButton(btn, sel) {{
+    const inSlip = slipSelections.some(s => s.match === sel.match && s.sel === sel.sel);
+    if (btn) {{
+      btn.className = 'btn-add' + (inSlip ? ' in-slip' : '');
+      btn.textContent = inSlip ? '✓ Ajouté' : '+ Coupon';
+    }}
+  }}
+
+  function closeEventModal(e) {{
+    if (e && e.target && e.target.closest('.modal-card')) return;
+    const modalBackdrop = document.getElementById('event-modal-backdrop');
+    if (modalBackdrop) {{
+      modalBackdrop.style.display = 'none';
+      document.body.style.overflow = '';
+    }}
+  }}
+
+  document.addEventListener('keydown', (e) => {{
+    if (e.key === 'Escape') closeEventModal();
+  }});
 
   // --- Draggable Bet Slip Functionality ---
   let isSlipDragging = false;
