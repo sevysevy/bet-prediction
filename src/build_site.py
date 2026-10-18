@@ -1452,6 +1452,7 @@ def generate_html(rows, combos, stats, source, demo, now_str, portal1=None, port
       <option value="low">Favoris lourds (Cote &lt; 1.30)</option>
       <option value="mid">Favoris moyens (1.30 - 1.80)</option>
       <option value="high">Outsiders (&gt; 1.80)</option>
+    </select>
     <select class="select-dropdown" id="prob-filter" onchange="applyFilters()">
       <option value="0">Toutes les probabilités</option>
       <option value="0.50">Chance ≥ 50%</option>
