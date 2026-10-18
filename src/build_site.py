@@ -49,6 +49,11 @@ ODDSPAPI_SLUGS = {
     "super-lig", "super-league-greece", "austrian-bundesliga", "super-league",
     "superliga", "eliteserien", "allsvenskan", "veikkausliiga", "ekstraklasa",
     "scottish-premiership", "league-of-ireland",
+    # Amériques (Nord & Latine)
+    "mls", "usl-championship", "canadian-premier-league", "liga-mx",
+    "brasileirao", "brasileirao-serie-a", "brasileirao-serie-b",
+    "primera-division-argentina", "liga-betplay", "campeonato-nacional-chile",
+    "copa-libertadores", "copa-sudamericana",
 }
 
 THEODDS_KEYS = [
@@ -60,7 +65,14 @@ THEODDS_KEYS = [
     "soccer_switzerland_superleague", "soccer_denmark_superliga", "soccer_norway_eliteserien",
     "soccer_sweden_allsvenskan", "soccer_sweden_superettan", "soccer_finland_veikkausliiga",
     "soccer_poland_ekstraklasa", "soccer_spl", "soccer_league_of_ireland",
-    "soccer_england_league1", "soccer_england_league2"
+    "soccer_england_league1", "soccer_england_league2",
+    # Amériques (USA, Canada, Amérique Latine)
+    "soccer_usa_mls", "soccer_usa_usl_championship", "soccer_can_pl",
+    "soccer_concacaf_champions_league", "soccer_brazil_campeonato",
+    "soccer_brazil_serie_b", "soccer_mexico_ligamx",
+    "soccer_argentina_primera_division", "soccer_colombia_primera_a",
+    "soccer_chile_campeonato", "soccer_conmebol_copa_libertadores",
+    "soccer_conmebol_copa_sudamericana"
 ]
 
 # Stratégie de préservation des quotas / tokens :
@@ -89,10 +101,12 @@ def collect_oddspapi(key):
     if not isinstance(participants, dict):
         participants = {}
 
-    # 3. Filtrage des tournois cibles (priorité aux championnats majeurs européens)
+    # 3. Filtrage des tournois cibles (priorité aux championnats majeurs européens et américains)
     major_cats = {
         "england", "spain", "germany", "italy", "france", "europe",
-        "international", "netherlands", "portugal", "belgium", "turkey", "scotland"
+        "international", "netherlands", "portugal", "belgium", "turkey", "scotland",
+        "usa", "canada", "brazil", "argentina", "mexico", "colombia", "chile",
+        "south-america", "north-central-america"
     }
     top_tier_ids = {"17", "8", "23", "35", "34", "37", "20", "18", "40", "53", "54", "182"}
     target_tournaments = []
@@ -601,7 +615,37 @@ FIX_DEMO = [
          {"name": "Monza", "price": 13.0}, {"name": "Draw", "price": 6.8}]}]},
      {"key": "betclic", "title": "Betclic", "last_update": "2026-10-17T13:54:00Z",
       "markets": [{"key": "h2h", "outcomes": [{"name": "Inter Milan", "price": 1.23},
-         {"name": "Monza", "price": 12.0}, {"name": "Draw", "price": 6.5}]}]}]}
+         {"name": "Monza", "price": 12.0}, {"name": "Draw", "price": 6.5}]}]}]},
+
+  {"id": "e7", "sport_key": "soccer_usa_mls", "commence_time": "2026-10-17T23:30:00Z",
+   "home_team": "Inter Miami", "away_team": "Atlanta United",
+   "bookmakers": [
+     {"key": "pinnacle", "title": "Pinnacle (Sharp)", "last_update": "2026-10-17T13:45:00Z",
+      "markets": [{"key": "h2h", "outcomes": [{"name": "Inter Miami", "price": 1.45},
+         {"name": "Atlanta United", "price": 6.80}, {"name": "Draw", "price": 4.80}]}]},
+     {"key": "winamax", "title": "Winamax", "last_update": "2026-10-17T13:55:00Z",
+      "markets": [{"key": "h2h", "outcomes": [{"name": "Inter Miami", "price": 1.52},
+         {"name": "Atlanta United", "price": 6.20}, {"name": "Draw", "price": 4.60}]}]}]},
+
+  {"id": "e8", "sport_key": "soccer_brazil_campeonato", "commence_time": "2026-10-17T22:00:00Z",
+   "home_team": "Flamengo", "away_team": "Corinthians",
+   "bookmakers": [
+     {"key": "pinnacle", "title": "Pinnacle (Sharp)", "last_update": "2026-10-17T13:45:00Z",
+      "markets": [{"key": "h2h", "outcomes": [{"name": "Flamengo", "price": 1.50},
+         {"name": "Corinthians", "price": 7.00}, {"name": "Draw", "price": 4.20}]}]},
+     {"key": "betclic", "title": "Betclic", "last_update": "2026-10-17T13:55:00Z",
+      "markets": [{"key": "h2h", "outcomes": [{"name": "Flamengo", "price": 1.55},
+         {"name": "Corinthians", "price": 6.50}, {"name": "Draw", "price": 4.10}]}]}]},
+
+  {"id": "e9", "sport_key": "soccer_argentina_primera_division", "commence_time": "2026-10-18T00:15:00Z",
+   "home_team": "River Plate", "away_team": "Velez Sarsfield",
+   "bookmakers": [
+     {"key": "pinnacle", "title": "Pinnacle (Sharp)", "last_update": "2026-10-17T13:45:00Z",
+      "markets": [{"key": "h2h", "outcomes": [{"name": "River Plate", "price": 1.58},
+         {"name": "Velez Sarsfield", "price": 6.50}, {"name": "Draw", "price": 3.80}]}]},
+     {"key": "winamax", "title": "Winamax", "last_update": "2026-10-17T13:55:00Z",
+      "markets": [{"key": "h2h", "outcomes": [{"name": "River Plate", "price": 1.62},
+         {"name": "Velez Sarsfield", "price": 6.00}, {"name": "Draw", "price": 3.75}]}]}]}
 ]
 
 

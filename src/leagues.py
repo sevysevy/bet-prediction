@@ -526,6 +526,269 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "iso": "be",
         "category": "Europe"
     },
+
+    # --- Amérique du Nord : USA & Canada ---
+    "soccer_usa_mls": {
+        "name": "MLS",
+        "country": "États-Unis / Canada",
+        "flag": "🇺🇸",
+        "iso": "us",
+        "category": "Amérique du Nord"
+    },
+    "mls": {
+        "name": "MLS",
+        "country": "États-Unis / Canada",
+        "flag": "🇺🇸",
+        "iso": "us",
+        "category": "Amérique du Nord"
+    },
+    "major-league-soccer": {
+        "name": "MLS",
+        "country": "États-Unis / Canada",
+        "flag": "🇺🇸",
+        "iso": "us",
+        "category": "Amérique du Nord"
+    },
+    "soccer_usa_usl_championship": {
+        "name": "USL Championship",
+        "country": "États-Unis",
+        "flag": "🇺🇸",
+        "iso": "us",
+        "category": "Amérique du Nord"
+    },
+    "usl-championship": {
+        "name": "USL Championship",
+        "country": "États-Unis",
+        "flag": "🇺🇸",
+        "iso": "us",
+        "category": "Amérique du Nord"
+    },
+    "soccer_can_pl": {
+        "name": "Canadian Premier League",
+        "country": "Canada",
+        "flag": "🇨🇦",
+        "iso": "ca",
+        "category": "Amérique du Nord"
+    },
+    "canadian-premier-league": {
+        "name": "Canadian Premier League",
+        "country": "Canada",
+        "flag": "🇨🇦",
+        "iso": "ca",
+        "category": "Amérique du Nord"
+    },
+    "soccer_concacaf_champions_league": {
+        "name": "CONCACAF Champions Cup",
+        "country": "Amérique du Nord",
+        "flag": "🌎",
+        "iso": "un",
+        "category": "Amérique du Nord"
+    },
+    "concacaf-champions-cup": {
+        "name": "CONCACAF Champions Cup",
+        "country": "Amérique du Nord",
+        "flag": "🌎",
+        "iso": "un",
+        "category": "Amérique du Nord"
+    },
+
+    # --- Amérique Latine : Brésil, Argentine, Mexique, Colombie, Chili... ---
+    "soccer_brazil_campeonato": {
+        "name": "Brasileirão Série A",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "brasileirao": {
+        "name": "Brasileirão Série A",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "brasileirao-serie-a": {
+        "name": "Brasileirão Série A",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "serie-a-brazil": {
+        "name": "Brasileirão Série A",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "soccer_brazil_serie_b": {
+        "name": "Brasileirão Série B",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "brasileirao-serie-b": {
+        "name": "Brasileirão Série B",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "soccer_brazil_copa_do_brasil": {
+        "name": "Copa do Brasil",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "copa-do-brasil": {
+        "name": "Copa do Brasil",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "soccer_mexico_ligamx": {
+        "name": "Liga MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
+    "liga-mx": {
+        "name": "Liga MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
+    "mexico-liga-mx": {
+        "name": "Liga MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
+    "soccer_mexico_expansion_mx": {
+        "name": "Liga de Expansión MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
+    "soccer_argentina_primera_division": {
+        "name": "Primera División",
+        "country": "Argentine",
+        "flag": "🇦🇷",
+        "iso": "ar",
+        "category": "Amérique Latine"
+    },
+    "primera-division-argentina": {
+        "name": "Primera División",
+        "country": "Argentine",
+        "flag": "🇦🇷",
+        "iso": "ar",
+        "category": "Amérique Latine"
+    },
+    "liga-profesional-argentina": {
+        "name": "Primera División",
+        "country": "Argentine",
+        "flag": "🇦🇷",
+        "iso": "ar",
+        "category": "Amérique Latine"
+    },
+    "soccer_argentina_copa_liga_profesional": {
+        "name": "Copa de la Liga",
+        "country": "Argentine",
+        "flag": "🇦🇷",
+        "iso": "ar",
+        "category": "Amérique Latine"
+    },
+    "soccer_colombia_primera_a": {
+        "name": "Primera A",
+        "country": "Colombie",
+        "flag": "🇨🇴",
+        "iso": "co",
+        "category": "Amérique Latine"
+    },
+    "liga-betplay": {
+        "name": "Primera A",
+        "country": "Colombie",
+        "flag": "🇨🇴",
+        "iso": "co",
+        "category": "Amérique Latine"
+    },
+    "colombia-primera-a": {
+        "name": "Primera A",
+        "country": "Colombie",
+        "flag": "🇨🇴",
+        "iso": "co",
+        "category": "Amérique Latine"
+    },
+    "soccer_chile_campeonato": {
+        "name": "Primera División",
+        "country": "Chili",
+        "flag": "🇨🇱",
+        "iso": "cl",
+        "category": "Amérique Latine"
+    },
+    "campeonato-nacional-chile": {
+        "name": "Primera División",
+        "country": "Chili",
+        "flag": "🇨🇱",
+        "iso": "cl",
+        "category": "Amérique Latine"
+    },
+    "soccer_peru_primera_division": {
+        "name": "Liga 1",
+        "country": "Pérou",
+        "flag": "🇵🇪",
+        "iso": "pe",
+        "category": "Amérique Latine"
+    },
+    "soccer_ecuador_serie_a": {
+        "name": "LigaPro Serie A",
+        "country": "Équateur",
+        "flag": "🇪🇨",
+        "iso": "ec",
+        "category": "Amérique Latine"
+    },
+    "soccer_uruguay_primera_division": {
+        "name": "Primera División",
+        "country": "Uruguay",
+        "flag": "🇺🇾",
+        "iso": "uy",
+        "category": "Amérique Latine"
+    },
+    "soccer_conmebol_copa_libertadores": {
+        "name": "Copa Libertadores",
+        "country": "Amérique du Sud",
+        "flag": "🏆",
+        "iso": "un",
+        "category": "Amérique Latine"
+    },
+    "copa-libertadores": {
+        "name": "Copa Libertadores",
+        "country": "Amérique du Sud",
+        "flag": "🏆",
+        "iso": "un",
+        "category": "Amérique Latine"
+    },
+    "soccer_conmebol_copa_sudamericana": {
+        "name": "Copa Sudamericana",
+        "country": "Amérique du Sud",
+        "flag": "🏆",
+        "iso": "un",
+        "category": "Amérique Latine"
+    },
+    "copa-sudamericana": {
+        "name": "Copa Sudamericana",
+        "country": "Amérique du Sud",
+        "flag": "🏆",
+        "iso": "un",
+        "category": "Amérique Latine"
+    },
 }
 
 COUNTRY_MAP: Dict[str, tuple[str, str, str]] = {
@@ -552,6 +815,15 @@ COUNTRY_MAP: Dict[str, tuple[str, str, str]] = {
     "argentina": ("Argentine", "🇦🇷", "ar"),
     "usa": ("États-Unis", "🇺🇸", "us"),
     "mexico": ("Mexique", "🇲🇽", "mx"),
+    "canada": ("Canada", "🇨🇦", "ca"),
+    "colombia": ("Colombie", "🇨🇴", "co"),
+    "chile": ("Chili", "🇨🇱", "cl"),
+    "peru": ("Pérou", "🇵🇪", "pe"),
+    "ecuador": ("Équateur", "🇪🇨", "ec"),
+    "uruguay": ("Uruguay", "🇺🇾", "uy"),
+    "paraguay": ("Paraguay", "🇵🇾", "py"),
+    "south-america": ("Amérique du Sud", "🌎", "un"),
+    "north-central-america": ("Amérique du Nord", "🌎", "un"),
     "japan": ("Japon", "🇯🇵", "jp"),
     "saudi-arabia": ("Arabie Saoudite", "🇸🇦", "sa"),
     "europe": ("Europe", "🇪🇺", "eu"),
