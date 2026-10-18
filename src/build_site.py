@@ -121,7 +121,8 @@ def collect_oddspapi(key):
         for t in tournaments:
             slug = t.get("tournamentSlug")
             cat = str(t.get("categorySlug") or "").lower()
-            if slug in ODDSPAPI_SLUGS and cat in major_cats:
+            # On ne requiert que les tournois actifs ayant réellement des matchs à venir
+            if slug in ODDSPAPI_SLUGS and cat in major_cats and (t.get("futureFixtures") or 0) > 0:
                 target_tournaments.append(t)
         # Tri : championnats de première division d'abord, puis par volume de matches
         target_tournaments.sort(key=lambda t: (
@@ -131,7 +132,7 @@ def collect_oddspapi(key):
 
     ids = [str(t["tournamentId"]) for t in target_tournaments]
     if not ids and isinstance(tournaments, list):
-        ids = [str(t["tournamentId"]) for t in tournaments[:15]]
+        ids = [str(t["tournamentId"]) for t in tournaments if (t.get("futureFixtures") or 0) > 0][:15]
 
     if not ids:
         raise RuntimeError("aucun tournoi disponible dans la réponse /tournaments")
@@ -155,6 +156,9 @@ def collect_oddspapi(key):
             if isinstance(payload, list):
                 all_odds.extend(payload)
         except Exception as exc:
+            # Si aucun match n'est ouvert sur ce lot (404), on passe sans bloquer
+            if "404" in str(exc) or "No fixtures" in str(exc):
+                continue
             print(f"  [!] oddspapi lot {chunk} : {exc}", file=sys.stderr)
 
     events = norm_oddspapi(all_odds, participants=participants, tournaments=tournaments_map)
