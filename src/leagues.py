@@ -614,6 +614,13 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "iso": "br",
         "category": "Amérique Latine"
     },
+    "brasileiro-serie-a": {
+        "name": "Brasileirão Série A",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
     "serie-a-brazil": {
         "name": "Brasileirão Série A",
         "country": "Brésil",
@@ -629,6 +636,13 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "category": "Amérique Latine"
     },
     "brasileirao-serie-b": {
+        "name": "Brasileirão Série B",
+        "country": "Brésil",
+        "flag": "🇧🇷",
+        "iso": "br",
+        "category": "Amérique Latine"
+    },
+    "brasileiro-serie-b": {
         "name": "Brasileirão Série B",
         "country": "Brésil",
         "flag": "🇧🇷",
@@ -663,6 +677,20 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "iso": "mx",
         "category": "Amérique Latine"
     },
+    "liga-mx-apertura": {
+        "name": "Liga MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
+    "liga-mx-clausura": {
+        "name": "Liga MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
     "mexico-liga-mx": {
         "name": "Liga MX",
         "country": "Mexique",
@@ -671,6 +699,13 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "category": "Amérique Latine"
     },
     "soccer_mexico_expansion_mx": {
+        "name": "Liga de Expansión MX",
+        "country": "Mexique",
+        "flag": "🇲🇽",
+        "iso": "mx",
+        "category": "Amérique Latine"
+    },
+    "liga-de-expansion-mx-apertura": {
         "name": "Liga de Expansión MX",
         "country": "Mexique",
         "flag": "🇲🇽",
@@ -692,6 +727,13 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "category": "Amérique Latine"
     },
     "liga-profesional-argentina": {
+        "name": "Primera División",
+        "country": "Argentine",
+        "flag": "🇦🇷",
+        "iso": "ar",
+        "category": "Amérique Latine"
+    },
+    "liga-profesional": {
         "name": "Primera División",
         "country": "Argentine",
         "flag": "🇦🇷",
@@ -726,6 +768,20 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "iso": "co",
         "category": "Amérique Latine"
     },
+    "primera-a-apertura": {
+        "name": "Primera A",
+        "country": "Colombie",
+        "flag": "🇨🇴",
+        "iso": "co",
+        "category": "Amérique Latine"
+    },
+    "primera-a-clausura": {
+        "name": "Primera A",
+        "country": "Colombie",
+        "flag": "🇨🇴",
+        "iso": "co",
+        "category": "Amérique Latine"
+    },
     "soccer_chile_campeonato": {
         "name": "Primera División",
         "country": "Chili",
@@ -734,6 +790,13 @@ LEAGUES_CATALOG: Dict[str, Dict[str, str]] = {
         "category": "Amérique Latine"
     },
     "campeonato-nacional-chile": {
+        "name": "Primera División",
+        "country": "Chili",
+        "flag": "🇨🇱",
+        "iso": "cl",
+        "category": "Amérique Latine"
+    },
+    "primera-division-27665": {
         "name": "Primera División",
         "country": "Chili",
         "flag": "🇨🇱",

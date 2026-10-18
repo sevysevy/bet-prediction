@@ -49,11 +49,14 @@ ODDSPAPI_SLUGS = {
     "super-lig", "super-league-greece", "austrian-bundesliga", "super-league",
     "superliga", "eliteserien", "allsvenskan", "veikkausliiga", "ekstraklasa",
     "scottish-premiership", "league-of-ireland",
-    # Amériques (Nord & Latine)
-    "mls", "usl-championship", "canadian-premier-league", "liga-mx",
-    "brasileirao", "brasileirao-serie-a", "brasileirao-serie-b",
-    "primera-division-argentina", "liga-betplay", "campeonato-nacional-chile",
-    "copa-libertadores", "copa-sudamericana",
+    # Amériques (USA, Canada, Amérique Latine, CONMEBOL)
+    "mls", "usl-championship", "canadian-premier-league",
+    "brasileiro-serie-a", "brasileiro-serie-b", "brasileirao", "brasileirao-serie-a", "brasileirao-serie-b", "copa-do-brasil",
+    "liga-profesional", "primera-division-argentina", "copa-de-la-liga",
+    "liga-mx-apertura", "liga-mx-clausura", "liga-mx", "liga-de-expansion-mx-apertura",
+    "primera-a-apertura", "primera-a-clausura", "liga-betplay",
+    "primera-division-27665", "primera-division", "campeonato-nacional-chile",
+    "copa-libertadores", "copa-sudamericana"
 }
 
 THEODDS_KEYS = [
@@ -101,14 +104,18 @@ def collect_oddspapi(key):
     if not isinstance(participants, dict):
         participants = {}
 
-    # 3. Filtrage des tournois cibles (priorité aux championnats majeurs européens et américains)
+    # 3. Filtrage des tournois cibles (championnats majeurs européens et américains)
     major_cats = {
         "england", "spain", "germany", "italy", "france", "europe",
-        "international", "netherlands", "portugal", "belgium", "turkey", "scotland",
-        "usa", "canada", "brazil", "argentina", "mexico", "colombia", "chile",
+        "international", "international-clubs", "netherlands", "portugal", "belgium", "turkey", "scotland",
+        "usa", "canada", "brazil", "argentina", "mexico", "colombia", "chile", "uruguay",
         "south-america", "north-central-america"
     }
-    top_tier_ids = {"17", "8", "23", "35", "34", "37", "20", "18", "40", "53", "54", "182"}
+    # IDs des ligues de premier plan prioritaires (Europe + Amériques)
+    top_tier_ids = {
+        "17", "8", "23", "35", "34", "37", "20", "18", "40", "53", "54", "182",
+        "242", "325", "155", "27464", "27070", "27665", "390", "28432", "384", "480", "28163"
+    }
     target_tournaments = []
     if isinstance(tournaments, list):
         for t in tournaments:
@@ -132,7 +139,7 @@ def collect_oddspapi(key):
     # ATTENTION API ODDSPAPI : Maximum 5 tournamentIds par requête
     # Découpage en lots de 5 avec temporisation respectant le rate limit de 1000ms
     CHUNK_SIZE = 5
-    MAX_CHUNKS = 4  # Jusqu'à 20 championnats cibles
+    MAX_CHUNKS = 8  # Jusqu'à 40 championnats cibles (Europe + Amériques complètes)
     all_odds = []
 
     for i in range(0, min(len(ids), CHUNK_SIZE * MAX_CHUNKS), CHUNK_SIZE):
